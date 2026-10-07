@@ -1,0 +1,26 @@
+# This file takes precedence over the upstream .dockerignore, even with an external context.
+**
+!package.json
+!package-lock.json
+!server/**
+!shared/**
+!data/**
+!public/**
+!packs/**
+!tools/**
+!docs/research/**
+!LICENSE
+!NOTICE.md
+!THIRD-PARTY-NOTICES.md
+# Generate vendor files and download assets in the build; never package host state.
+public/vendor
+public/assets
+public/fonts
+public/dev
+data/local-assets.json
+**/node_modules
+**/.git
+**/.env
+**/.env.*
+**/__pycache__
+**/*.pyc

@@ -1,0 +1,5 @@
+.cache/
+upstream/
+.env
+*.log
+node_modules/

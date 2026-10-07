@@ -1,0 +1,19 @@
+services:
+  stronghold:
+    image: ${IMAGE:?Set IMAGE in .env to your GHCR image}
+    restart: unless-stopped
+    init: true
+    ports:
+      - "${BIND_ADDRESS:-0.0.0.0}:${HTTP_PORT:-3000}:3000"
+    environment:
+      PORT: "3000"
+      HOST: "0.0.0.0"
+      SP_COMBAT: ${SP_COMBAT:-client}
+      SP_VERIFY: ${SP_VERIFY:-off}
+      TRUST_PROXY: ${TRUST_PROXY:-auto}
+    # Rooms live in memory upstream. A volume cannot preserve matches across restarts.
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
