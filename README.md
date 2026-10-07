@@ -57,6 +57,43 @@ ghcr.io/<你的 GitHub 用户名或组织>/<本仓库名>:latest
 
 ## 2. Docker Compose 部署
 
+### 单文件部署（无需 `.env`）
+
+在一个空目录中创建 `compose.yaml`，复制以下完整配置即可使用本仓库的镜像，无需下载仓库或创建 `.env` 文件：
+
+```yaml
+services:
+  stronghold:
+    image: ghcr.io/vincywindy/stronghold-protocol-action:latest
+    restart: unless-stopped
+    init: true
+    ports:
+      - "3000:3000"
+    environment:
+      PORT: "3000"
+      HOST: "0.0.0.0"
+      SP_COMBAT: "client"
+      SP_VERIFY: "off"
+      TRUST_PROXY: "auto"
+    # 对局保存在内存中，挂载数据卷也无法在重启后恢复对局。
+    stop_grace_period: 30s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+```
+
+在该目录执行：
+
+```bash
+docker compose pull
+docker compose up -d
+```
+
+访问 `http://<服务器地址>:3000`。要使用其他宿主机端口，例如 8080，将 `ports` 改为 `"8080:3000"`，容器内的 `PORT` 保持 `"3000"`。其他配置直接修改上述 YAML 即可。
+
+### 使用仓库配置与 `.env`
+
 复制 `.env.example` 为 `.env`，将 `IMAGE` 修改为你的实际镜像地址：
 
 ```dotenv
@@ -89,7 +126,7 @@ docker compose up -d
 
 游戏房间和对局保存在内存中，更新或重启会结束当前对局；无需数据库或存档卷。镜像发布不会自动更新你已经运行的容器。
 
-Compose 的 `HTTP_PORT` 改宿主机端口，容器端口固定为 3000。`BIND_ADDRESS=127.0.0.1` 可用于同机反向代理；默认 `0.0.0.0` 允许从局域网访问。其余变量见 `.env.example` 和[上游部署文档](https://github.com/sganggs/Stronghold-Protocol/blob/master/docs/DEPLOY.md)。
+使用 `.env` 方式时，`HTTP_PORT` 改宿主机端口，容器端口固定为 3000。`BIND_ADDRESS=127.0.0.1` 可用于同机反向代理；默认 `0.0.0.0` 允许从局域网访问。其余变量见 `.env.example` 和[上游部署文档](https://github.com/sganggs/Stronghold-Protocol/blob/master/docs/DEPLOY.md)。
 
 ## 3. 素材范围
 
