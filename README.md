@@ -27,7 +27,7 @@ ghcr.io/<你的 GitHub 用户名或组织>/<本仓库名>:latest
 | 默认分支推送构建相关文件 | 构建、验证两个架构并发布 |
 | 每日定时任务 | 北京时间 11:23 左右重新构建跟踪的上游版本并发布 |
 | 手动运行 | 可指定上游分支、Tag 或完整提交 SHA，选择是否下载素材 |
-| Pull Request | 构建并验证 amd64 精简镜像，不登录、不发布 |
+| Pull Request | 在原生 amd64 / arm64 runner 上构建并验证精简镜像，不登录、不发布 |
 | 非默认分支推送 | 仅检查工作流、标签规则和 Compose 配置 |
 | 在非默认分支手动运行 | 构建验证，但不发布 |
 
@@ -125,4 +125,12 @@ Linux / WSL / Git Bash 上可测试本地镜像：
 bash scripts/smoke-image.sh stronghold-protocol:local linux/amd64
 ```
 
-发布流水线会分别构建、启动两个架构的镜像，检查健康接口、首页、前端库、游戏数据、WebSocket 握手和容器 HEALTHCHECK，全部通过后才推送多架构镜像。ARM 在 QEMU 下验证。检查不包含真实浏览器渲染和完整游戏对局。Actions 固定到提交 SHA，由 Dependabot 提议更新。
+发布流水线在 `ubuntu-24.04`（amd64）与 `ubuntu-24.04-arm`（arm64）上分别原生构建、启动镜像，不使用 QEMU。两个任务使用同一个预先解析的上游提交，分别缓存依赖。检查覆盖健康接口、首页、前端库、游戏数据、WebSocket 握手和容器 HEALTHCHECK。
+
+发布运行先将候选镜像按 digest 上传至 GHCR，再在对应原生 CPU 上测试该 digest。只有两个架构全部通过，才合并已测试的 digest 并更新 `latest` / SHA 标签，合并时不重新构建。任一架构失败会阻止标签更新，但 GHCR 可能保留无标签的候选镜像。PR 与非默认分支手动运行只测试本地镜像，不向 GHCR 上传。
+
+检查不包含真实浏览器渲染和完整游戏对局。Actions 固定到提交 SHA，由 Dependabot 提议更新。
+
+### ARM64 构建故障
+
+若日志在 `npm ci` 阶段出现 `qemu: uncaught target signal 4 (Illegal instruction)` / exit 132，崩溃发生于 QEMU 下执行 Node/npm 的阶段，不足以证明游戏代码不支持 ARM64。上游生产依赖未声明 x86 专用限制；本流水线通过原生 ARM64 构建和服务测试验证实际兼容性。GitHub 提供 [原生 ARM64 Linux runner](https://docs.github.com/en/actions/reference/runners/github-hosted-runners)。

@@ -55,6 +55,11 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    outputs:
+      sha: ${{ steps.metadata.outputs.sha }}
+      image: ${{ steps.metadata.outputs.image }}
+      tags: ${{ steps.metadata.outputs.tags }}
+      publish: ${{ steps.metadata.outputs.publish }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -69,22 +74,6 @@ jobs:
         env:
           IMAGE: ghcr.io/example/stronghold-protocol-action:latest
         run: docker compose config --quiet
-
-  build:
-    needs: validate
-    # Push builds publish only from the repository's default branch.
-    if: github.event_name != 'push' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
-    runs-on: ubuntu-latest
-    timeout-minutes: 90
-    permissions:
-      contents: read
-      packages: write
-    steps:
-      - name: Check out image build repository
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-
       - name: Check out upstream source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -93,6 +82,7 @@ jobs:
           path: upstream
           persist-credentials: false
 
+      # Resolve a moving branch once so both native builders use exactly the same source.
       - name: Resolve image tags and source revision
         id: metadata
         env:
@@ -103,71 +93,69 @@ jobs:
           echo "sha=$UPSTREAM_SHA" >> "$GITHUB_OUTPUT"
           node scripts/image-metadata.mjs
 
-      - name: Set up ARM emulation
-        if: github.event_name != 'pull_request'
-        uses: docker/setup-qemu-action@99012661954931238ded8c8b007157a8430204e1 # v4.4.0
+  build:
+    needs: validate
+    if: github.event_name != 'push' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    name: Build and test (${{ matrix.arch }})
+    # Node/npm can SIGILL under QEMU; build and run each image on its native CPU.
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Check out image build repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          platforms: arm64
+          persist-credentials: false
+
+      - name: Check out resolved upstream commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ env.UPSTREAM_REPOSITORY }}
+          ref: ${{ needs.validate.outputs.sha }}
+          path: upstream
+          persist-credentials: false
+
+      - name: Verify native runner architecture
+        env:
+          TARGET_ARCH: ${{ matrix.arch }}
+        run: |
+          case "$TARGET_ARCH:$(uname -m)" in
+            amd64:x86_64|arm64:aarch64) ;;
+            *) echo 'Runner CPU does not match target architecture' >&2; exit 1 ;;
+          esac
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
-      - name: Build amd64 image for testing
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: ./upstream
-          file: ./Dockerfile
-          platforms: linux/amd64
-          load: true
-          pull: true
-          tags: stronghold-test:amd64
-          build-args: |
-            NODE_IMAGE=${{ env.NODE_IMAGE }}
-            FETCH_ASSETS=${{ env.FETCH_ASSETS }}
-          cache-from: type=gha,scope=amd64-assets${{ env.FETCH_ASSETS }}
-          cache-to: type=gha,mode=max,scope=amd64-assets${{ env.FETCH_ASSETS }}
-
-      - name: Test amd64 container
-        run: bash scripts/smoke-image.sh stronghold-test:amd64 linux/amd64
-
-      - name: Build arm64 image for testing
-        if: github.event_name != 'pull_request'
-        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
-        with:
-          context: ./upstream
-          file: ./Dockerfile
-          platforms: linux/arm64
-          load: true
-          pull: true
-          tags: stronghold-test:arm64
-          build-args: |
-            NODE_IMAGE=${{ env.NODE_IMAGE }}
-            FETCH_ASSETS=${{ env.FETCH_ASSETS }}
-          cache-from: type=gha,scope=arm64-assets${{ env.FETCH_ASSETS }}
-          cache-to: type=gha,mode=max,scope=arm64-assets${{ env.FETCH_ASSETS }}
-
-      - name: Test arm64 container
-        if: github.event_name != 'pull_request'
-        run: bash scripts/smoke-image.sh stronghold-test:arm64 linux/arm64
-
       - name: Log in to GHCR
-        if: steps.metadata.outputs.publish == 'true'
+        if: needs.validate.outputs.publish == 'true'
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish tested multi-platform image
-        id: publish
-        if: steps.metadata.outputs.publish == 'true'
+      # Upload candidates by digest only. Deployment tags are updated after BOTH smoke tests pass.
+      - name: Build native image
+        id: image
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
           context: ./upstream
           file: ./Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.metadata.outputs.tags }}
+          platforms: linux/${{ matrix.arch }}
+          pull: true
+          outputs: ${{ needs.validate.outputs.publish == 'true' && format('type=image,name={0},push-by-digest=true,name-canonical=true,push=true', needs.validate.outputs.image) || 'type=docker' }}
+          tags: ${{ needs.validate.outputs.publish != 'true' && 'stronghold-test:local' || '' }}
           build-args: |
             NODE_IMAGE=${{ env.NODE_IMAGE }}
             FETCH_ASSETS=${{ env.FETCH_ASSETS }}
@@ -176,32 +164,97 @@ jobs:
             org.opencontainers.image.description=Unofficial Stronghold Protocol container; see /app/NOTICE.md for asset terms
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.url=https://github.com/${{ env.UPSTREAM_REPOSITORY }}
-            org.opencontainers.image.revision=${{ steps.metadata.outputs.sha }}
-            io.github.stronghold-protocol.upstream=https://github.com/${{ env.UPSTREAM_REPOSITORY }}/tree/${{ steps.metadata.outputs.sha }}
+            org.opencontainers.image.revision=${{ needs.validate.outputs.sha }}
+            io.github.stronghold-protocol.upstream=https://github.com/${{ env.UPSTREAM_REPOSITORY }}/tree/${{ needs.validate.outputs.sha }}
             io.github.stronghold-protocol.recipe-revision=${{ github.sha }}
             io.github.stronghold-protocol.assets=${{ env.FETCH_ASSETS }}
-          cache-from: |
-            type=gha,scope=amd64-assets${{ env.FETCH_ASSETS }}
-            type=gha,scope=arm64-assets${{ env.FETCH_ASSETS }}
-          provenance: mode=max
-          sbom: true
+          cache-from: type=gha,scope=${{ matrix.arch }}-assets${{ env.FETCH_ASSETS }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.arch }}-assets${{ env.FETCH_ASSETS }}
+          provenance: ${{ needs.validate.outputs.publish == 'true' && 'mode=max' || 'false' }}
+          sbom: ${{ needs.validate.outputs.publish == 'true' }}
+
+      - name: Test exact image on native CPU
+        env:
+          IMAGE_REF: ${{ needs.validate.outputs.publish == 'true' && format('{0}@{1}', needs.validate.outputs.image, steps.image.outputs.digest) || 'stronghold-test:local' }}
+          PLATFORM: linux/${{ matrix.arch }}
+        run: bash scripts/smoke-image.sh "$IMAGE_REF" "$PLATFORM"
+
+      - name: Record tested image digest
+        if: needs.validate.outputs.publish == 'true'
+        env:
+          DIGEST: ${{ steps.image.outputs.digest }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          [[ "$DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]
+          mkdir -p "$RUNNER_TEMP/digests"
+          printf '%s\n' "$DIGEST" > "$RUNNER_TEMP/digests/$ARCH.digest"
+
+      - name: Upload tested digest
+        if: needs.validate.outputs.publish == 'true'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: digest-${{ matrix.arch }}
+          path: ${{ runner.temp }}/digests/${{ matrix.arch }}.digest
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: [validate, build]
+    if: needs.validate.outputs.publish == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Download tested digests
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          pattern: digest-*
+          path: ${{ runner.temp }}/digests
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Publish multi-platform manifest without rebuilding
+        env:
+          IMAGE: ${{ needs.validate.outputs.image }}
+          IMAGE_TAGS: ${{ needs.validate.outputs.tags }}
+        run: |
+          sources=()
+          for arch in amd64 arm64; do
+            digest=$(cat "$RUNNER_TEMP/digests/$arch.digest")
+            [[ "$digest" =~ ^sha256:[a-f0-9]{64}$ ]]
+            sources+=("$IMAGE@$digest")
+          done
+          tags=()
+          while IFS= read -r tag; do
+            [[ -z "$tag" ]] || tags+=(--tag "$tag")
+          done <<< "$IMAGE_TAGS"
+          docker buildx imagetools create "${tags[@]}" "${sources[@]}"
+          first_tag=${IMAGE_TAGS%%$'\n'*}
+          docker buildx imagetools inspect "$first_tag" --raw > manifest.json
+          jq -e '[.manifests[].platform | select(.os == "linux") | .architecture] | sort == ["amd64", "arm64"]' manifest.json
+          docker buildx imagetools inspect "$first_tag" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Write build summary
         env:
-          IMAGE: ${{ steps.metadata.outputs.image }}
-          IMAGE_TAGS: ${{ steps.metadata.outputs.tags }}
-          UPSTREAM_SHA: ${{ steps.metadata.outputs.sha }}
-          PUBLISHED: ${{ steps.metadata.outputs.publish }}
-          DIGEST: ${{ steps.publish.outputs.digest }}
+          IMAGE_TAGS: ${{ needs.validate.outputs.tags }}
+          UPSTREAM_SHA: ${{ needs.validate.outputs.sha }}
         run: |
           {
             echo '## Stronghold Protocol image'
             echo "- Upstream: https://github.com/$UPSTREAM_REPOSITORY/tree/$UPSTREAM_SHA"
             echo "- Downloaded assets: $FETCH_ASSETS"
-            echo "- Published: $PUBLISHED"
-            if [ "$PUBLISHED" = true ]; then
-              echo "- Pull by digest: $IMAGE@$DIGEST"
-              echo '### Tags'
-              printf '%s\n' "$IMAGE_TAGS"
-            fi
+            echo '- Built and smoke-tested on native amd64 and arm64 runners'
+            echo '### Published tags'
+            printf '%s\n' "$IMAGE_TAGS"
           } >> "$GITHUB_STEP_SUMMARY"

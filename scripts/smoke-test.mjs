@@ -7,7 +7,7 @@ async function get(path) {
   return response;
 }
 
-// Emulated ARM startup can take longer, but a permanently broken image must fail CI.
+// Allow cold startup on CI, but a permanently broken image must fail the release.
 let ready = false;
 for (let attempt = 0; attempt < 60; attempt++) {
   try {
