@@ -61,6 +61,8 @@ ghcr.io/<你的 GitHub 用户名或组织>/<本仓库名>:latest
 
 在一个空目录中创建 `compose.yaml`，复制以下完整配置即可使用本仓库的镜像，无需下载仓库或创建 `.env` 文件：
 
+环境变量含义参考[上游「端口与配置」说明](https://github.com/sganggs/Stronghold-Protocol#端口与配置)，下面的注释补充了容器端口与监听地址的配置方式。
+
 ```yaml
 services:
   stronghold:
@@ -70,10 +72,19 @@ services:
     ports:
       - "3000:3000"
     environment:
+      # 容器内服务端口，默认 3000；须与 ports 映射右侧的端口一致。
       PORT: "3000"
+      # 容器内监听地址，默认 0.0.0.0（所有网卡），供 Docker 端口映射访问。
+      # 127.0.0.1 仅监听容器自身回环地址；限制宿主机访问范围应修改 ports。
       HOST: "0.0.0.0"
+      # 战斗计算位置：client（默认）在玩家浏览器计算，服务器负载较低；
+      # server 改由服务器计算并推送战斗过程。
       SP_COMBAT: "client"
+      # 服务器复算客户端战斗结果：off（默认）关闭；sample 约抽查 1/8；
+      # all 全部复算，CPU 开销更高。
       SP_VERIFY: "off"
+      # 是否采信 X-Forwarded-For 等代理转发头：auto（默认）仅信任本机/内网来源；
+      # "1" 信任所有来源；"0" 忽略转发头。数字值也需保留引号。
       TRUST_PROXY: "auto"
     # 对局保存在内存中，挂载数据卷也无法在重启后恢复对局。
     stop_grace_period: 30s
