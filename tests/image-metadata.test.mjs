@@ -9,8 +9,8 @@ const base = {
   GITHUB_EVENT_NAME: 'schedule',
   GITHUB_REF: 'refs/heads/main',
   DEFAULT_BRANCH: 'main',
-  UPSTREAM_REF: 'master',
-  TRACKED_REF: 'master',
+  RELEASE_TAG: 'v0.2.1',
+  IS_LATEST_RELEASE: 'true',
 };
 
 test('scheduled tracked builds publish lowercase GHCR tags', () => {
@@ -18,6 +18,7 @@ test('scheduled tracked builds publish lowercase GHCR tags', () => {
   assert.equal(result.publish, true);
   assert.deepEqual(result.tags, [
     `ghcr.io/example/stronghold-protocol-action:sha-${base.UPSTREAM_SHA}`,
+    'ghcr.io/example/stronghold-protocol-action:v0.2.1',
     'ghcr.io/example/stronghold-protocol-action:latest',
   ]);
 });
@@ -27,10 +28,17 @@ test('lite builds cannot overwrite asset-inclusive tags', () => {
   assert.ok(result.tags.every((tag) => tag.endsWith('-lite')));
 });
 
-test('manual historical builds publish only a commit tag', () => {
-  const result = imageMetadata({ ...base, GITHUB_EVENT_NAME: 'workflow_dispatch', UPSTREAM_REF: 'v0.1.4' });
+test('historical releases get their own version but never advance latest', () => {
+  const result = imageMetadata({ ...base, GITHUB_EVENT_NAME: 'workflow_dispatch', RELEASE_TAG: 'v0.1.4', IS_LATEST_RELEASE: 'false' });
   assert.equal(result.publish, true);
+  assert.equal(result.tags.length, 2);
+  assert.equal(result.tags[1], 'ghcr.io/example/stronghold-protocol-action:v0.1.4');
+});
+
+test('unreleased branches get only a SHA tag', () => {
+  const result = imageMetadata({ ...base, RELEASE_TAG: '', IS_LATEST_RELEASE: 'false' });
   assert.equal(result.tags.length, 1);
+  assert.equal(result.versionTag, '');
 });
 
 test('pull requests and nondefault branches never publish', () => {
@@ -50,5 +58,7 @@ test('invalid metadata fails before writing workflow outputs', () => {
     { UPSTREAM_SHA: 'abc\ninjected=value' },
     { GITHUB_REPOSITORY: 'owner/repo\ninjected=value' },
     { FETCH_ASSETS: 'true' },
+    { RELEASE_TAG: 'release/v1' },
+    { RELEASE_TAG: 'latest' },
   ]) assert.throws(() => imageMetadata({ ...base, ...patch }));
 });

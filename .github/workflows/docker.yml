@@ -19,12 +19,12 @@ on:
       - 'compose.yaml'
       - '.env.example'
   schedule:
-    # Daily at 03:23 UTC / 11:23 Asia/Shanghai, including upstream/base-image updates.
-    - cron: '23 3 * * *'
+    # UTC 16:00 is the following day's 00:00 in Asia/Shanghai (UTC+8).
+    - cron: '0 16 * * *'
   workflow_dispatch:
     inputs:
       upstream_ref:
-        description: 'Upstream branch, tag or full SHA; empty follows UPSTREAM_REF (default: master)'
+        description: 'latest = latest stable Release; or branch/tag/SHA. Empty follows UPSTREAM_REF.'
         type: string
         required: false
       include_assets:
@@ -42,8 +42,7 @@ concurrency:
 
 env:
   UPSTREAM_REPOSITORY: sganggs/Stronghold-Protocol
-  TRACKED_REF: ${{ vars.UPSTREAM_REF || 'master' }}
-  UPSTREAM_REF: ${{ inputs.upstream_ref || vars.UPSTREAM_REF || 'master' }}
+  REQUESTED_REF: ${{ inputs.upstream_ref || vars.UPSTREAM_REF || 'latest' }}
   NODE_IMAGE: ${{ vars.NODE_IMAGE || 'node:22-alpine' }}
   # PRs validate the recipe without the large asset download. Manual choices override variables.
   FETCH_ASSETS: >-
@@ -55,11 +54,16 @@ jobs:
   validate:
     runs-on: ubuntu-latest
     timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: read
     outputs:
       sha: ${{ steps.metadata.outputs.sha }}
       image: ${{ steps.metadata.outputs.image }}
       tags: ${{ steps.metadata.outputs.tags }}
       publish: ${{ steps.metadata.outputs.publish }}
+      build: ${{ steps.check.outputs.build }}
+      version: ${{ steps.metadata.outputs.version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -74,11 +78,17 @@ jobs:
         env:
           IMAGE: ghcr.io/example/stronghold-protocol-action:latest
         run: docker compose config --quiet
+      - name: Resolve upstream Release
+        id: upstream
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/resolve-upstream.mjs
+
       - name: Check out upstream source
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ env.UPSTREAM_REPOSITORY }}
-          ref: ${{ env.UPSTREAM_REF }}
+          ref: ${{ steps.upstream.outputs.ref }}
           path: upstream
           persist-credentials: false
 
@@ -87,15 +97,25 @@ jobs:
         id: metadata
         env:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          RELEASE_TAG: ${{ steps.upstream.outputs.release_tag }}
+          IS_LATEST_RELEASE: ${{ steps.upstream.outputs.is_latest }}
         run: |
           UPSTREAM_SHA=$(git -C upstream rev-parse HEAD)
           export UPSTREAM_SHA
           echo "sha=$UPSTREAM_SHA" >> "$GITHUB_OUTPUT"
           node scripts/image-metadata.mjs
 
+      - name: Check whether this Release is already published
+        id: check
+        env:
+          VERSION_TAG: ${{ steps.metadata.outputs.version_tag }}
+          LATEST_TAG: ${{ steps.upstream.outputs.is_latest == 'true' && steps.metadata.outputs.latest_tag || '' }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/check-release-image.mjs
+
   build:
     needs: validate
-    if: github.event_name != 'push' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    if: needs.validate.outputs.build == 'true' && (github.event_name != 'push' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
     name: Build and test (${{ matrix.arch }})
     # Node/npm can SIGILL under QEMU; build and run each image on its native CPU.
     strategy:
@@ -165,6 +185,7 @@ jobs:
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
             org.opencontainers.image.url=https://github.com/${{ env.UPSTREAM_REPOSITORY }}
             org.opencontainers.image.revision=${{ needs.validate.outputs.sha }}
+            org.opencontainers.image.version=${{ needs.validate.outputs.version }}
             io.github.stronghold-protocol.upstream=https://github.com/${{ env.UPSTREAM_REPOSITORY }}/tree/${{ needs.validate.outputs.sha }}
             io.github.stronghold-protocol.recipe-revision=${{ github.sha }}
             io.github.stronghold-protocol.assets=${{ env.FETCH_ASSETS }}
@@ -249,10 +270,12 @@ jobs:
         env:
           IMAGE_TAGS: ${{ needs.validate.outputs.tags }}
           UPSTREAM_SHA: ${{ needs.validate.outputs.sha }}
+          VERSION: ${{ needs.validate.outputs.version }}
         run: |
           {
             echo '## Stronghold Protocol image'
             echo "- Upstream: https://github.com/$UPSTREAM_REPOSITORY/tree/$UPSTREAM_SHA"
+            echo "- Version: $VERSION"
             echo "- Downloaded assets: $FETCH_ASSETS"
             echo '- Built and smoke-tested on native amd64 and arm64 runners'
             echo '### Published tags'

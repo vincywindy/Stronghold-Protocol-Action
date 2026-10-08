@@ -2,7 +2,7 @@
 
 为 [sganggs/Stronghold-Protocol](https://github.com/sganggs/Stronghold-Protocol) 提供独立的 Docker 构建仓库。游戏源码在 Actions 运行时从上游获取，本仓库维护 Dockerfile、GitHub Actions 和部署配置，不需要手动同步游戏代码。
 
-默认跟踪上游 `master`，发布到 **GitHub Container Registry (GHCR)**：
+默认跟踪上游最新正式 **Release**（排除草稿与预发布），发布到 **GitHub Container Registry (GHCR)**，Docker 版本标签与上游 Release 标签一致，例如 `v0.2.1`：
 
 ```text
 ghcr.io/<你的 GitHub 用户名或组织>/<本仓库名>:latest
@@ -25,13 +25,17 @@ ghcr.io/<你的 GitHub 用户名或组织>/<本仓库名>:latest
 | 事件 | 行为 |
 | --- | --- |
 | 默认分支推送构建相关文件 | 构建、验证两个架构并发布 |
-| 每日定时任务 | 北京时间 11:23 左右重新构建跟踪的上游版本并发布 |
-| 手动运行 | 可指定上游分支、Tag 或完整提交 SHA，选择是否下载素材 |
+| 每日定时任务 | 北京时间 00:00 检查最新正式 Release；镜像版本未发布或发布不完整时构建，否则跳过 |
+| 手动运行 | 重新构建；可指定上游 Release、分支、Tag 或完整提交 SHA，选择是否下载素材 |
 | Pull Request | 在原生 amd64 / arm64 runner 上构建并验证精简镜像，不登录、不发布 |
 | 非默认分支推送 | 仅检查工作流、标签规则和 Compose 配置 |
 | 在非默认分支手动运行 | 构建验证，但不发布 |
 
-定时任务只在默认分支运行，GitHub 可能延迟调度。它每天重建，不检查上游是否有新提交；这样也能更新 Node 基础镜像。上游推送不会直接触发本仓库，最长约一天后跟进。公开仓库长期无活动时 GitHub 可能停用定时任务，可在 Actions 页面重新启用。
+定时任务使用 UTC `16:00`，对应东八区次日 `00:00`，只在默认分支运行。GitHub 可能排队延迟或丢弃高负载时的调度，不能保证准点执行；上游发布 Release 不会直接触发本仓库，通常在下一次每日检查时跟进。公开仓库长期无活动时 GitHub 可能停用定时任务，可在 Actions 页面重新启用。参见 [GitHub 定时事件说明](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)。
+
+每日检查通过 GitHub 的 latest Release API 获取正式版本，从其 Git Tag 检出代码，保持应用代码、镜像版本标签和镜像 `org.opencontainers.image.version` 一致。仅当该版本标签与 `latest` 指向同一个包含 amd64 / arm64 的镜像时，才跳过构建；检查失败会报错，不会当成“没有更新”。精简镜像独立检查带 `-lite` 的标签。固定历史 Release 时只检查该版本，不覆盖当前 `latest`。
+
+版本未变时不会每天刷新基础镜像或素材；需要重建相同版本时，手动点击 **Run workflow** 即可。推送构建相关文件也会重新构建。若上游移动了同名 Tag，须手动重建以同步变化。
 
 ### 可选配置
 
@@ -39,21 +43,22 @@ ghcr.io/<你的 GitHub 用户名或组织>/<本仓库名>:latest
 
 | Variable | 默认值 | 说明 |
 | --- | --- | --- |
-| `UPSTREAM_REF` | `master` | 自动构建跟踪的上游分支、Tag 或完整 SHA |
+| `UPSTREAM_REF` | `latest` | `latest` 自动跟踪最新正式 Release；也可固定 Release 标签，或指定分支 / Tag / 完整 SHA |
 | `FETCH_ASSETS` | `1` | 自动构建是否下载素材；`0` 为精简镜像，只接受 `0` 或 `1` |
 | `NODE_IMAGE` | `node:22-alpine` | Node 基础镜像，必须支持两个架构且兼容上游依赖 |
 
-手动运行时，留空 `upstream_ref` 使用 `UPSTREAM_REF`；`include_assets` 复选框覆盖 `FETCH_ASSETS`，默认勾选。
+手动运行时，留空 `upstream_ref` 使用 `UPSTREAM_REF`；填 `latest` 可显式选择最新正式 Release。`include_assets` 复选框覆盖 `FETCH_ASSETS`，默认勾选。若以前设置过 `UPSTREAM_REF=master`，请删除该变量或改为 `latest` 才会启用 Release 跟踪。选择未关联正式 Release 的分支 / SHA 时，定时任务仍会每日构建，但不会更新版本标签或 `latest`。
 
 ### 标签规则
 
 | 构建内容 | 标签 |
 | --- | --- |
-| 跟踪版本，含公开素材 | `latest`、`sha-<上游完整 SHA>` |
-| 跟踪版本，不下载素材 | `latest-lite`、`sha-<上游完整 SHA>-lite` |
-| 手动指定其他版本 | 仅对应的 `sha-…` 标签，不覆盖 `latest` / `latest-lite` |
+| 最新正式 Release，含公开素材 | `<Release 标签>`（如 `v0.2.1`）、`latest`、`sha-<上游完整 SHA>` |
+| 最新正式 Release，不下载素材 | `<Release 标签>-lite`、`latest-lite`、`sha-<上游完整 SHA>-lite` |
+| 指定历史正式 Release | 对应的 Release 标签和 SHA 标签（精简版加 `-lite`），不覆盖 `latest` / `latest-lite` |
+| 未关联正式 Release 的分支 / Tag / SHA | 仅对应的 SHA 标签，不覆盖 Release 标签或 `latest` |
 
-`latest` 表示跟踪分支的最新构建，并不表示上游最新 Release。SHA 标签标识游戏源码版本；相同源码重新构建时，基础镜像、素材和构建配置仍可能变化。严格锁定部署应使用运行摘要中的 `ghcr.io/…@sha256:…`。
+`latest` 表示本仓库最近成功构建的上游最新正式 Release，版本标签原样保留上游的 `v` 前缀（如果有）。例如可用 `ghcr.io/vincywindy/stronghold-protocol-action:v0.2.1` 固定游戏版本。手动重建同一版本时，基础镜像、素材和构建配置仍可能变化；严格锁定部署应使用运行摘要中的 `ghcr.io/…@sha256:…`。
 
 ## 2. Docker Compose 部署
 
