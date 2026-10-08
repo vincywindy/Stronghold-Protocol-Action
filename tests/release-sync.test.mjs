@@ -56,6 +56,15 @@ test('matching complete version and latest manifests allow skipping a release', 
   assert.equal(await releaseAlreadyPublished(registry, registryMock()), true);
 });
 
+test('old images without 3D art are rebuilt even if the release tag is unchanged', async () => {
+  assert.equal(await releaseAlreadyPublished({ ...registry, requireLocalAssets: true }, registryMock()), false);
+  const request = async (url) => url.startsWith('https://ghcr.io/token?')
+    ? response({ token: 'test-token' })
+    : response({ ...index(), annotations: { 'io.github.stronghold-protocol.local-assets': 'release' } }, 200,
+      { 'docker-content-digest': 'sha256:complete' });
+  assert.equal(await releaseAlreadyPublished({ ...registry, requireLocalAssets: true }, request), true);
+});
+
 test('missing version, missing latest and stale latest all require a build', async () => {
   for (const options of [{ versionStatus: 404 }, { latestStatus: 404 }, { latestDigest: 'sha256:old' }]) {
     assert.equal(await releaseAlreadyPublished(registry, registryMock(options)), false);

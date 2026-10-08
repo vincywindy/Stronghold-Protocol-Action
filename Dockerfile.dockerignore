@@ -12,6 +12,7 @@
 !LICENSE
 !NOTICE.md
 !THIRD-PARTY-NOTICES.md
+!.container-assets/**
 # Generate vendor files and download assets in the build; never package host state.
 public/vendor
 public/assets

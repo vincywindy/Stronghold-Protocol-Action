@@ -11,7 +11,7 @@ trap cleanup EXIT
 # A non-default port checks both the server's environment contract and its HEALTHCHECK.
 docker run --detach --name "$container" --platform "$platform" \
   --env PORT=3100 --health-interval=2s --health-start-period=2s "$image"
-docker exec -i "$container" node --input-type=module < scripts/smoke-test.mjs
+docker exec -i --env EXPECT_LOCAL_ASSETS="${EXPECT_LOCAL_ASSETS:-0}" "$container" node --input-type=module < scripts/smoke-test.mjs
 for attempt in $(seq 1 30); do
   status=$(docker inspect --format '{{.State.Health.Status}}' "$container")
   if [[ "$status" == healthy ]]; then

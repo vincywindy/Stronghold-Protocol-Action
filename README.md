@@ -33,7 +33,7 @@ ghcr.io/<你的 GitHub 用户名或组织>/<本仓库名>:latest
 
 定时任务使用 UTC `16:00`，对应东八区次日 `00:00`，只在默认分支运行。GitHub 可能排队延迟或丢弃高负载时的调度，不能保证准点执行；上游发布 Release 不会直接触发本仓库，通常在下一次每日检查时跟进。公开仓库长期无活动时 GitHub 可能停用定时任务，可在 Actions 页面重新启用。参见 [GitHub 定时事件说明](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)。
 
-每日检查通过 GitHub 的 latest Release API 获取正式版本，从其 Git Tag 检出代码，保持应用代码、镜像版本标签和镜像 `org.opencontainers.image.version` 一致。仅当该版本标签与 `latest` 指向同一个包含 amd64 / arm64 的镜像时，才跳过构建；检查失败会报错，不会当成“没有更新”。精简镜像独立检查带 `-lite` 的标签。固定历史 Release 时只检查该版本，不覆盖当前 `latest`。
+每日检查通过 GitHub 的 latest Release API 获取正式版本，从其 Git Tag 检出代码，保持应用代码、镜像版本标签和镜像 `org.opencontainers.image.version` 一致。仅当该版本标签与 `latest` 指向同一个包含 amd64 / arm64 的镜像时，才跳过构建；含素材版本还会检查已经包含 Release 本地素材的标记，旧的无 3D 素材镜像会自动补建。检查失败会报错，不会当成“没有更新”。精简镜像独立检查带 `-lite` 的标签。固定历史 Release 时只检查该版本，不覆盖当前 `latest`。
 
 版本未变时不会每天刷新基础镜像或素材；需要重建相同版本时，手动点击 **Run workflow** 即可。推送构建相关文件也会重新构建。若上游移动了同名 Tag，须手动重建以同步变化。
 
@@ -44,7 +44,7 @@ ghcr.io/<你的 GitHub 用户名或组织>/<本仓库名>:latest
 | Variable | 默认值 | 说明 |
 | --- | --- | --- |
 | `UPSTREAM_REF` | `latest` | `latest` 自动跟踪最新正式 Release；也可固定 Release 标签，或指定分支 / Tag / 完整 SHA |
-| `FETCH_ASSETS` | `1` | 自动构建是否下载素材；`0` 为精简镜像，只接受 `0` 或 `1` |
+| `FETCH_ASSETS` | `1` | 是否下载素材；正式 Release 同时包含完整包中的 3D 棋盘等本地素材；`0` 为精简镜像，只接受 `0` 或 `1` |
 | `NODE_IMAGE` | `node:22-alpine` | Node 基础镜像，必须支持两个架构且兼容上游依赖 |
 
 手动运行时，留空 `upstream_ref` 使用 `UPSTREAM_REF`；填 `latest` 可显式选择最新正式 Release。`include_assets` 复选框覆盖 `FETCH_ASSETS`，默认勾选。若以前设置过 `UPSTREAM_REF=master`，请删除该变量或改为 `latest` 才会启用 Release 跟踪。选择未关联正式 Release 的分支 / SHA 时，定时任务仍会每日构建，但不会更新版本标签或 `latest`。
@@ -53,7 +53,7 @@ ghcr.io/<你的 GitHub 用户名或组织>/<本仓库名>:latest
 
 | 构建内容 | 标签 |
 | --- | --- |
-| 最新正式 Release，含公开素材 | `<Release 标签>`（如 `v0.2.1`）、`latest`、`sha-<上游完整 SHA>` |
+| 最新正式 Release，含素材及 3D 棋盘 | `<Release 标签>`（如 `v0.2.1`）、`latest`、`sha-<上游完整 SHA>` |
 | 最新正式 Release，不下载素材 | `<Release 标签>-lite`、`latest-lite`、`sha-<上游完整 SHA>-lite` |
 | 指定历史正式 Release | 对应的 Release 标签和 SHA 标签（精简版加 `-lite`），不覆盖 `latest` / `latest-lite` |
 | 未关联正式 Release 的分支 / Tag / SHA | 仅对应的 SHA 标签，不覆盖 Release 标签或 `latest` |
@@ -146,9 +146,16 @@ docker compose up -d
 
 ## 3. 素材范围
 
-默认在构建阶段执行上游 `tools/fetch-assets.mjs`，下载公开镜像提供的美术、音频和字体。素材下载脚本报错时立即停止构建，不发布残缺镜像。首次构建需要下载数百 MB，后续使用 GitHub Actions 构建缓存。
+默认的正式 Release 镜像同时包含两类素材：
 
-这**不等同于上游 Release 完整整合包**：官方 3D 棋盘等本地客户端提取素材不在该下载范围中。需要时，从与代码相同版本的上游完整包取得 `public/assets/local/` 和 `data/local-assets.json`，通过 Compose override 分别只读挂载到 `/app/public/assets/local/` 和 `/app/data/local-assets.json`。不要用空目录覆盖镜像中的整个 `/app/public/assets`。
+- 上游 `tools/fetch-assets.mjs` 下载的公开美术、音频和字体。
+- **同版本完整 Release 包**中的 `public/assets/local/` 与 `data/local-assets.json`，包括官方 **3D 棋盘贴图、模型与特效**、相关界面素材及本地提取模型。无需在 Actions 或部署主机上安装《明日方舟》客户端。
+
+Actions 每轮只下载一次完整包，按 GitHub Release API 提供的文件大小与 SHA-256 校验，核对包内版本、素材清单引用和必要的棋盘文件，再把提取结果共享给两个架构。只导入这两处素材，不使用包内源码或 `node_modules`。当前 `v0.2.1` 完整 ZIP 约 428 MiB，提取后的本地素材约 70 MiB。下载、校验或素材完整性检查失败会停止发布。
+
+镜像会记录完整包的校验值；容器测试会检查本地素材清单、棋盘贴图、模型配置、地块表和 three.js 是否可访问。正常启动即可使用这些资源，实际 3D 渲染仍需浏览器支持 WebGL2，且未被玩家设置切换为 2D。该流程不运行完整浏览器游戏测试。
+
+手动构建未关联正式 Release 的分支或提交时，无法确定匹配的完整包，因此仅下载公开素材，不自动混用其他版本的本地素材。需要自行补充时，可以将匹配的 `public/assets/local/` 与 `data/local-assets.json` 分别只读挂载到 `/app/public/assets/local/` 和 `/app/data/local-assets.json`。不要用空目录覆盖镜像中的整个 `/app/public/assets`。
 
 精简镜像不自动下载素材，直接运行会使用缺图占位或回退效果。可从同一版本已完成上游 setup 的目录只读挂载 `public/assets`、`public/fonts`、`data/assets.json`，对应到镜像的 `/app/` 下相同路径。
 
@@ -165,6 +172,17 @@ docker run --rm --init -p 3000:3000 stronghold-protocol:local
 ```
 
 `Dockerfile.dockerignore` 会覆盖上游的 `.dockerignore`，仅发送构建需要的文件。它会排除宿主机素材和依赖，由镜像内部重新生成。设 `FETCH_ASSETS=0` 可快速检查精简构建。
+
+本地构建也要包含 Release 的 3D 素材时，需要 Python 3.11+，并让源码与素材使用同一个 Release（下面以 `v0.2.1` 为例）：
+
+```bash
+git -C upstream fetch --depth 1 origin tag v0.2.1
+git -C upstream checkout --detach v0.2.1
+python scripts/prepare-release-assets.py --tag v0.2.1 --destination upstream/.container-assets
+docker build -f Dockerfile --build-arg FETCH_ASSETS=1 --build-arg INCLUDE_LOCAL_ASSETS=1 -t stronghold-protocol:local ./upstream
+```
+
+`.container-assets` 必须为空或不存在，避免混入其他版本素材；准备脚本仅需 Python 标准库，不依赖 UnityPy，也不启动游戏客户端。
 
 标签规则测试只需 Node.js 22+：
 

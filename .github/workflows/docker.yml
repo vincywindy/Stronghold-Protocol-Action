@@ -28,7 +28,7 @@ on:
         type: string
         required: false
       include_assets:
-        description: 'Download upstream public art/audio into the image'
+        description: 'Include public art/audio and same-release local art (including 3D board)'
         type: boolean
         default: true
 
@@ -53,7 +53,7 @@ env:
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 25
     permissions:
       contents: read
       packages: read
@@ -64,12 +64,16 @@ jobs:
       publish: ${{ steps.metadata.outputs.publish }}
       build: ${{ steps.check.outputs.build }}
       version: ${{ steps.metadata.outputs.version }}
+      local_assets: ${{ steps.upstream.outputs.release_tag != '' && env.FETCH_ASSETS == '1' }}
+      bundle_digest: ${{ steps.assets.outputs.digest }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Test image publishing rules
         run: node --test tests/*.test.mjs
+      - name: Test release asset validation
+        run: python3 -m unittest discover -s tests -p 'test_*.py'
       - name: Validate workflow syntax
         run: |
           docker run --rm -v "$PWD:/repo" -w /repo \
@@ -111,7 +115,25 @@ jobs:
           VERSION_TAG: ${{ steps.metadata.outputs.version_tag }}
           LATEST_TAG: ${{ steps.upstream.outputs.is_latest == 'true' && steps.metadata.outputs.latest_tag || '' }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REQUIRE_LOCAL_ASSETS: ${{ steps.upstream.outputs.release_tag != '' && env.FETCH_ASSETS == '1' && '1' || '0' }}
         run: node scripts/check-release-image.mjs
+
+      - name: Prepare verified local art from the matching full Release
+        id: assets
+        if: steps.check.outputs.build == 'true' && steps.upstream.outputs.release_tag != '' && env.FETCH_ASSETS == '1' && (github.event_name != 'push' || github.ref == format('refs/heads/{0}', github.event.repository.default_branch))
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_TAG: ${{ steps.upstream.outputs.release_tag }}
+        run: python3 scripts/prepare-release-assets.py --tag "$RELEASE_TAG" --destination "$RUNNER_TEMP/release-assets"
+
+      - name: Share verified art with both architecture builds
+        if: steps.assets.outcome == 'success'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-local-assets
+          path: ${{ runner.temp }}/release-assets/
+          if-no-files-found: error
+          retention-days: 1
 
   build:
     needs: validate
@@ -144,6 +166,13 @@ jobs:
           ref: ${{ needs.validate.outputs.sha }}
           path: upstream
           persist-credentials: false
+
+      - name: Download verified local art
+        if: needs.validate.outputs.local_assets == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: release-local-assets
+          path: upstream/.container-assets
 
       - name: Verify native runner architecture
         env:
@@ -179,6 +208,7 @@ jobs:
           build-args: |
             NODE_IMAGE=${{ env.NODE_IMAGE }}
             FETCH_ASSETS=${{ env.FETCH_ASSETS }}
+            INCLUDE_LOCAL_ASSETS=${{ needs.validate.outputs.local_assets == 'true' && '1' || '0' }}
           labels: |
             org.opencontainers.image.title=Stronghold Protocol
             org.opencontainers.image.description=Unofficial Stronghold Protocol container; see /app/NOTICE.md for asset terms
@@ -189,6 +219,8 @@ jobs:
             io.github.stronghold-protocol.upstream=https://github.com/${{ env.UPSTREAM_REPOSITORY }}/tree/${{ needs.validate.outputs.sha }}
             io.github.stronghold-protocol.recipe-revision=${{ github.sha }}
             io.github.stronghold-protocol.assets=${{ env.FETCH_ASSETS }}
+            io.github.stronghold-protocol.local-assets=${{ needs.validate.outputs.local_assets == 'true' && 'release' || 'none' }}
+            io.github.stronghold-protocol.release-bundle-digest=${{ needs.validate.outputs.bundle_digest }}
           cache-from: type=gha,scope=${{ matrix.arch }}-assets${{ env.FETCH_ASSETS }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}-assets${{ env.FETCH_ASSETS }}
           provenance: ${{ needs.validate.outputs.publish == 'true' && 'mode=max' || 'false' }}
@@ -198,6 +230,7 @@ jobs:
         env:
           IMAGE_REF: ${{ needs.validate.outputs.publish == 'true' && format('{0}@{1}', needs.validate.outputs.image, steps.image.outputs.digest) || 'stronghold-test:local' }}
           PLATFORM: linux/${{ matrix.arch }}
+          EXPECT_LOCAL_ASSETS: ${{ needs.validate.outputs.local_assets == 'true' && '1' || '0' }}
         run: bash scripts/smoke-image.sh "$IMAGE_REF" "$PLATFORM"
 
       - name: Record tested image digest
@@ -249,6 +282,7 @@ jobs:
         env:
           IMAGE: ${{ needs.validate.outputs.image }}
           IMAGE_TAGS: ${{ needs.validate.outputs.tags }}
+          LOCAL_ASSETS_MODE: ${{ needs.validate.outputs.local_assets == 'true' && 'release' || 'none' }}
         run: |
           sources=()
           for arch in amd64 arm64; do
@@ -260,7 +294,7 @@ jobs:
           while IFS= read -r tag; do
             [[ -z "$tag" ]] || tags+=(--tag "$tag")
           done <<< "$IMAGE_TAGS"
-          docker buildx imagetools create "${tags[@]}" "${sources[@]}"
+          docker buildx imagetools create --annotation "index:io.github.stronghold-protocol.local-assets=$LOCAL_ASSETS_MODE" "${tags[@]}" "${sources[@]}"
           first_tag=${IMAGE_TAGS%%$'\n'*}
           docker buildx imagetools inspect "$first_tag" --raw > manifest.json
           jq -e '[.manifests[].platform | select(.os == "linux") | .architecture] | sort == ["amd64", "arm64"]' manifest.json

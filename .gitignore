@@ -3,3 +3,6 @@ upstream/
 .env
 *.log
 node_modules/
+.container-assets/
+__pycache__/
+*.py[cod]

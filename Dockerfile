@@ -10,6 +10,7 @@ RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
 
 FROM dependencies AS build
 ARG FETCH_ASSETS=1
+ARG INCLUDE_LOCAL_ASSETS=0
 COPY . .
 # Older upstream releases have no packs/; keeping an empty directory lets them build too.
 # Asset errors must fail the build rather than replace a working image with incomplete art.
@@ -20,6 +21,14 @@ RUN mkdir -p packs public/assets \
          0) echo "Building without downloaded game assets" ;; \
          *) echo "FETCH_ASSETS must be 0 or 1" >&2; exit 1 ;; \
        esac
+# Only verified, same-release art is staged here by CI. Do not copy the bundle's code or node_modules.
+RUN case "$INCLUDE_LOCAL_ASSETS" in \
+      1) test -f .container-assets/data/local-assets.json \
+         && cp -R .container-assets/public/assets/local public/assets/ \
+         && cp .container-assets/data/local-assets.json data/local-assets.json ;; \
+      0) ;; \
+      *) echo "INCLUDE_LOCAL_ASSETS must be 0 or 1" >&2; exit 1 ;; \
+    esac
 FROM ${NODE_IMAGE} AS runtime
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
