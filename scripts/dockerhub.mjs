@@ -14,10 +14,14 @@ export function dockerhubConfig(env) {
   return { enabled: true, repository };
 }
 
-const skopeo = (args) => execFileSync('skopeo', args, { encoding: 'utf8', maxBuffer: 16 * 1024 * 1024 });
+// Capture stderr so an expected missing-tag probe cannot print Skopeo's misleading "fatal" log.
+// Unexpected failures still propagate with the captured stderr attached to the error.
+const skopeo = (args) => execFileSync('skopeo', args, {
+  encoding: 'utf8', maxBuffer: 16 * 1024 * 1024, stdio: ['ignore', 'pipe', 'pipe'],
+});
 const digest = (raw) => `sha256:${createHash('sha256').update(raw).digest('hex')}`;
 
-export function mirrorToDockerhub({ sourceImage, sourceTag, tags, repository }, run = skopeo) {
+export function mirrorToDockerhub({ sourceImage, sourceTag, tags, repository }, run = skopeo, log = console.log) {
   const source = `${sourceImage}:${sourceTag}`;
   const raw = run(['inspect', '--raw', `docker://${source}`]);
   const manifest = JSON.parse(raw);
@@ -33,14 +37,20 @@ export function mirrorToDockerhub({ sourceImage, sourceTag, tags, repository }, 
     let current;
     try {
       current = run(['inspect', '--raw', `docker://${destination}`]);
-    } catch {
-      // Missing tags and failed reads both attempt a real copy; authentication failures then fail the job.
+    } catch (error) {
+      // Only a registry's missing-manifest response is normal on first publication, not auth/network errors.
+      if (!/\b(?:manifest|name)[ _]unknown\b/i.test(String(error.stderr || error.message))) throw error;
+      log(`Tag does not exist yet; it will be created: ${destination}`);
     }
     if (!current || digest(current) !== sourceDigest) {
+      log(`Copying multi-platform image to ${destination}`);
       run(['copy', '--all', '--preserve-digests', '--retry-times', '3',
         `docker://${sourceImage}@${sourceDigest}`, `docker://${destination}`]);
       const copied = run(['inspect', '--raw', `docker://${destination}`]);
       if (digest(copied) !== sourceDigest) throw new Error(`Digest mismatch after copying ${destination}`);
+      log(`Published and verified: ${destination} (${sourceDigest})`);
+    } else {
+      log(`Already synchronized: ${destination} (${sourceDigest})`);
     }
     published.push(destination);
   }
