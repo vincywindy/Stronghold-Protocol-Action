@@ -10,6 +10,8 @@ ghcr.io/<你的 GitHub 用户名或组织>/<本仓库名>:latest
 
 镜像名称全部小写。支持 `linux/amd64` 与 `linux/arm64`，使用 Node.js 22 Alpine，以非 root 用户运行。
 
+可选同步到 **Docker Hub**：配置下述凭据后启用，未配置时自动跳过，GHCR 照常发布。
+
 ## 1. 启用自动构建
 
 1. 在 GitHub 创建仓库，例如 `Stronghold-Protocol-Action`，把本目录中的文件提交并推送到默认分支（通常为 `main`）。不要提交 `.cache/` 或下载的上游源码。
@@ -48,6 +50,25 @@ ghcr.io/<你的 GitHub 用户名或组织>/<本仓库名>:latest
 | `NODE_IMAGE` | `node:22-alpine` | Node 基础镜像，必须支持两个架构且兼容上游依赖 |
 
 手动运行时，留空 `upstream_ref` 使用 `UPSTREAM_REF`；填 `latest` 可显式选择最新正式 Release。`include_assets` 复选框覆盖 `FETCH_ASSETS`，默认勾选。若以前设置过 `UPSTREAM_REF=master`，请删除该变量或改为 `latest` 才会启用 Release 跟踪。选择未关联正式 Release 的分支 / SHA 时，定时任务仍会每日构建，但不会更新版本标签或 `latest`。
+
+### 可选推送到 Docker Hub
+
+在 GitHub 仓库 **Settings → Secrets and variables → Actions → Secrets** 中添加：
+
+| Secret | 内容 |
+| --- | --- |
+| `DOCKERHUB_USERNAME` | Docker Hub 登录用户名 |
+| `DOCKERHUB_TOKEN` | 具有目标仓库 Read / Write 权限的 Docker Hub Personal Access Token，勿填写账户密码 |
+
+两个 Secret 都有值时才启用；未配置或只配置一个时，自动跳过 Docker Hub 登录和推送，不影响 GHCR。Token 配置参考 [Docker 官方文档](https://docs.docker.com/security/access-tokens/)。
+
+默认镜像地址是 `docker.io/<DOCKERHUB_USERNAME>/<本 GitHub 仓库名的小写形式>`。若要指定仓库或组织，在 **Variables** 中添加 `DOCKERHUB_REPOSITORY`，例如 `your-name/stronghold-protocol` 或 `your-org/stronghold-protocol`，必须全小写，不含 `docker.io/`、标签或协议。提前在 Docker Hub 创建对应仓库并设置 Public / Private；用于登录的用户及 Token 需要该仓库的推送权限。
+
+配置完成后，在默认分支手动 **Run workflow**，或等待每日定时任务。Docker Hub 使用与 GHCR 相同的 Release、`latest` 和 SHA 标签（精简版同样带 `-lite`），同步两个架构及构建证明，不重复构建。每日任务即使跳过 GHCR 构建，也会补齐 Docker Hub 缺失或不同的标签，已经一致则不重复推送。
+
+同步通过 [Skopeo](https://github.com/containers/skopeo/blob/main/docs/skopeo-copy.1.md) 复制完整多架构镜像并校验 digest。凭据已配置但无效、权限不足或同步失败时，Docker Hub 任务会报错，已经发布成功的 GHCR 镜像仍可使用；修正配置后可重新运行任务或等待下一次定时同步。删除任一 Secret 即可停用 Docker Hub 推送。
+
+使用 Docker Hub 部署时，只需将 Compose 的 `image` 改为实际地址，例如 `your-name/stronghold-protocol:latest`；私有仓库需先在部署主机执行 `docker login`。发布结果可在 Docker Hub 对应仓库的 **Tags** 页面及 Actions 运行摘要查看。
 
 ### 标签规则
 

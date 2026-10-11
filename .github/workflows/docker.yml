@@ -64,6 +64,7 @@ jobs:
       publish: ${{ steps.metadata.outputs.publish }}
       build: ${{ steps.check.outputs.build }}
       version: ${{ steps.metadata.outputs.version }}
+      version_tag: ${{ steps.metadata.outputs.version_tag }}
       local_assets: ${{ steps.upstream.outputs.release_tag != '' && env.FETCH_ASSETS == '1' }}
       bundle_digest: ${{ steps.assets.outputs.digest }}
     steps:
@@ -315,3 +316,55 @@ jobs:
             echo '### Published tags'
             printf '%s\n' "$IMAGE_TAGS"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  dockerhub:
+    name: Optional Docker Hub mirror
+    needs: [validate, publish]
+    # A scheduled GHCR cache hit still needs a mirror check (new credentials or a failed prior copy).
+    if: >-
+      !cancelled() && needs.validate.result == 'success' && needs.validate.outputs.publish == 'true' &&
+      (needs.publish.result == 'success' || (needs.validate.outputs.build == 'false' && needs.publish.result == 'skipped'))
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check optional Docker Hub configuration
+        id: hub
+        env:
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          DOCKERHUB_REPOSITORY: ${{ vars.DOCKERHUB_REPOSITORY }}
+        run: node scripts/dockerhub.mjs configure
+      - name: Install registry copy tool
+        if: steps.hub.outputs.enabled == 'true'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends skopeo
+      - name: Log in to source and destination registries
+        if: steps.hub.outputs.enabled == 'true'
+        env:
+          REGISTRY_AUTH_FILE: ${{ runner.temp }}/dockerhub-auth.json
+          GHCR_USER: ${{ github.actor }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+        run: |
+          printf '%s' "$GHCR_TOKEN" | skopeo login --username "$GHCR_USER" --password-stdin ghcr.io
+          printf '%s' "$DOCKERHUB_TOKEN" | skopeo login --username "$DOCKERHUB_USERNAME" --password-stdin docker.io
+      - name: Mirror tested images and verify digests
+        if: steps.hub.outputs.enabled == 'true'
+        env:
+          REGISTRY_AUTH_FILE: ${{ runner.temp }}/dockerhub-auth.json
+          IMAGE: ${{ needs.validate.outputs.image }}
+          IMAGE_TAGS: ${{ needs.validate.outputs.tags }}
+          VERSION_TAG: ${{ needs.validate.outputs.version_tag }}
+          DOCKERHUB_REPOSITORY: ${{ steps.hub.outputs.repository }}
+        run: node scripts/dockerhub.mjs mirror
+      - name: Remove registry credentials
+        if: always()
+        run: rm -f "$RUNNER_TEMP/dockerhub-auth.json"
