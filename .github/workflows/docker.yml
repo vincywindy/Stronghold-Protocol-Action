@@ -19,8 +19,8 @@ on:
       - 'compose.yaml'
       - '.env.example'
   schedule:
-    # UTC 16:00 is the following day's 00:00 in Asia/Shanghai (UTC+8).
-    - cron: '0 16 * * *'
+    # Poll hourly; the release publication check skips builds already completed.
+    - cron: '0 * * * *'
   workflow_dispatch:
     inputs:
       upstream_ref:
