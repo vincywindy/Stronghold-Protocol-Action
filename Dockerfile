@@ -38,6 +38,8 @@ COPY --from=dependencies /app/package.json /app/package-lock.json ./
 COPY --from=dependencies /app/node_modules ./node_modules
 COPY --from=build /app/server ./server
 COPY --from=build /app/shared ./shared
+# Studio imports asset helpers from tools/ at startup; they are runtime dependencies too.
+COPY --from=build /app/tools ./tools
 COPY --from=build /app/data ./data
 COPY --from=build /app/public ./public
 COPY --from=build /app/packs ./packs
