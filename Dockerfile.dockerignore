@@ -8,12 +8,18 @@
 !public/**
 !packs/**
 !tools/**
+!schemas/**
+!scripts/**
+!plugins/README.md
+!plugins/AGENTS.md
+!plugins/_template/**
+!test/helpers/battleHarness.js
 !docs/research/**
 !LICENSE
 !NOTICE.md
 !THIRD-PARTY-NOTICES.md
 !.container-assets/**
-# Generate vendor files and download assets in the build; never package host state.
+# Generate vendor files; art comes from a verified Release or the branch downloader, never host state.
 public/vendor
 public/assets
 public/fonts

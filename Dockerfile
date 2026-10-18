@@ -13,39 +13,28 @@ ARG FETCH_ASSETS=1
 ARG INCLUDE_LOCAL_ASSETS=0
 COPY . .
 # Older upstream releases have no packs/; keeping an empty directory lets them build too.
-# Asset errors must fail the build rather than replace a working image with incomplete art.
+# INCLUDE_LOCAL_ASSETS retains its existing name, but now imports ALL verified Release art.
+# Release builds must not regenerate manifests against mutable third-party audio/model indexes.
 RUN mkdir -p packs public/assets \
     && node tools/vendor.mjs \
-    && case "$FETCH_ASSETS" in \
-         1) node tools/fetch-assets.mjs ;; \
-         0) echo "Building without downloaded game assets" ;; \
-         *) echo "FETCH_ASSETS must be 0 or 1" >&2; exit 1 ;; \
-       esac
-# Only verified, same-release art is staged here by CI. Do not copy the bundle's code or node_modules.
-RUN case "$INCLUDE_LOCAL_ASSETS" in \
-      1) test -f .container-assets/data/local-assets.json \
-         && cp -R .container-assets/public/assets/local public/assets/ \
-         && cp .container-assets/data/local-assets.json data/local-assets.json ;; \
-      0) ;; \
-      *) echo "INCLUDE_LOCAL_ASSETS must be 0 or 1" >&2; exit 1 ;; \
-    esac
+    && case "$FETCH_ASSETS:$INCLUDE_LOCAL_ASSETS" in \
+         1:1) test -f .container-assets/data/assets.json \
+              && test -f .container-assets/data/local-assets.json \
+              && cp -R .container-assets/public/. public/ \
+              && cp -R .container-assets/data/. data/ ;; \
+         1:0) node tools/fetch-assets.mjs ;; \
+         0:0) echo "Building without downloaded game assets" ;; \
+         *) echo "Expected FETCH_ASSETS:INCLUDE_LOCAL_ASSETS = 1:1, 1:0 or 0:0" >&2; exit 1 ;; \
+       esac \
+    && rm -rf .container-assets .cache
 FROM ${NODE_IMAGE} AS runtime
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000
 WORKDIR /app
-COPY --from=dependencies /app/package.json /app/package-lock.json ./
-COPY --from=dependencies /app/node_modules ./node_modules
-COPY --from=build /app/server ./server
-COPY --from=build /app/shared ./shared
-# Studio imports asset helpers from tools/ at startup; they are runtime dependencies too.
-COPY --from=build /app/tools ./tools
-COPY --from=build /app/data ./data
-COPY --from=build /app/public ./public
-COPY --from=build /app/packs ./packs
-# The simulator reads these research tables when the primary data needs a fallback.
-COPY --from=build /app/docs/research ./docs/research
-COPY --from=build /app/LICENSE /app/NOTICE.md /app/THIRD-PARTY-NOTICES.md ./
+# Dockerfile.dockerignore defines the shipped source; a second directory list here
+# previously omitted tools/ even though Studio imports it at runtime. Dependencies are production-only.
+COPY --from=build /app ./
 USER node
 EXPOSE 3000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

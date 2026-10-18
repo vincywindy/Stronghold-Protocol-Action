@@ -1,4 +1,6 @@
 import assert from 'node:assert/strict';
+import { existsSync, readFileSync, statSync } from 'node:fs';
+import { resolve, sep } from 'node:path';
 
 const base = process.env.SMOKE_URL || `http://127.0.0.1:${process.env.PORT || 3000}`;
 async function get(path) {
@@ -25,6 +27,30 @@ for (const path of ['/vendor/pixi.min.js', '/vendor/preact.module.js', '/data/co
 }
 
 if (process.env.EXPECT_LOCAL_ASSETS === '1') {
+  // HTTP health can pass with silent art/audio fallbacks. Check every bundled manifest
+  // against the final filesystem too, so a COPY/ignore regression cannot publish missing art.
+  const publicRoot = resolve('public') + sep;
+  const files = new Set();
+  function collect(value) {
+    if (typeof value === 'string' && /^\/(assets|fonts)\//.test(value)) {
+      const file = resolve('public', `.${decodeURIComponent(value)}`);
+      assert.ok(file.startsWith(publicRoot), `Asset path escapes public/: ${value}`);
+      files.add(file);
+    } else if (value && typeof value === 'object') {
+      for (const child of Object.values(value)) collect(child);
+    }
+  }
+  for (const file of ['data/assets.json', 'data/local-assets.json', 'data/local-fx.json']) {
+    // Battle FX were added after the older releases this recipe still supports.
+    if (file === 'data/local-fx.json' && !existsSync(file)) continue;
+    collect(JSON.parse(readFileSync(file, 'utf8')));
+  }
+  assert.ok(files.size > 0, 'Release asset manifests contain no file references');
+  for (const file of files) {
+    const info = statSync(file);
+    assert.ok(info.isFile() && info.size > 0, `Missing or empty release asset: ${file}`);
+  }
+  console.log(`Release asset integrity passed: ${files.size} referenced files`);
   const manifest = await (await get('/data/local-assets.json')).json();
   const atlas = manifest.groups?.['map/autochess']?.TX_autochessi_D?.path;
   assert.ok(atlas?.startsWith('/assets/local/'), '3D board atlas missing from local manifest');

@@ -46,7 +46,7 @@ ghcr.io/<你的 GitHub 用户名或组织>/<本仓库名>:latest
 | Variable | 默认值 | 说明 |
 | --- | --- | --- |
 | `UPSTREAM_REF` | `latest` | `latest` 自动跟踪最新正式 Release；也可固定 Release 标签，或指定分支 / Tag / 完整 SHA |
-| `FETCH_ASSETS` | `1` | 是否下载素材；正式 Release 同时包含完整包中的 3D 棋盘等本地素材；`0` 为精简镜像，只接受 `0` 或 `1` |
+| `FETCH_ASSETS` | `1` | 是否包含素材；正式 Release 直接使用同版本完整包的全部素材、字体和清单；`0` 为精简镜像，只接受 `0` 或 `1` |
 | `NODE_IMAGE` | `node:22-alpine` | Node 基础镜像，必须支持两个架构且兼容上游依赖 |
 
 手动运行时，留空 `upstream_ref` 使用 `UPSTREAM_REF`；填 `latest` 可显式选择最新正式 Release。`include_assets` 复选框覆盖 `FETCH_ASSETS`，默认勾选。若以前设置过 `UPSTREAM_REF=master`，请删除该变量或改为 `latest` 才会启用 Release 跟踪。选择未关联正式 Release 的分支 / SHA 时，定时任务仍会每小时构建，但不会更新版本标签或 `latest`。
@@ -167,14 +167,13 @@ docker compose up -d
 
 ## 3. 素材范围
 
-默认的正式 Release 镜像同时包含两类素材：
+默认的正式 Release 镜像直接使用**同版本官方完整 Release ZIP**中的全部素材：`public/assets/`（公开美术、音频、模型及本地 3D 素材）、`public/fonts/`，以及配套的 `data/assets.json`、`data/local-assets.json` 和存在时的 `data/local-fx.json`。无需在 Actions 或部署主机安装《明日方舟》客户端。
 
-- 上游 `tools/fetch-assets.mjs` 下载的公开美术、音频和字体。
-- **同版本完整 Release 包**中的 `public/assets/local/` 与 `data/local-assets.json`，包括官方 **3D 棋盘贴图、模型与特效**、相关界面素材及本地提取模型。无需在 Actions 或部署主机上安装《明日方舟》客户端。
+Actions 每轮只下载一次完整包，按 GitHub Release API 提供的大小与 SHA-256 校验，核对包内版本，检查所有素材清单引用的文件与必要的棋盘文件，再共享给两个架构。只提取上述素材和清单；应用源码仍来自对应 Git Tag，生产依赖仍由 `npm ci` 安装。校验或完整性检查失败会停止发布。
 
-Actions 每轮只下载一次完整包，按 GitHub Release API 提供的文件大小与 SHA-256 校验，核对包内版本、素材清单引用和必要的棋盘文件，再把提取结果共享给两个架构。只导入这两处素材，不使用包内源码或 `node_modules`。当前 `v0.2.1` 完整 ZIP 约 428 MiB，提取后的本地素材约 70 MiB。下载、校验或素材完整性检查失败会停止发布。
+正式 Release 构建不再运行 `tools/fetch-assets.mjs`，避免已发布版本在重新抓取第三方音频/模型索引时出现条目减少、清单缩水而构建失败；不会用 `--allow-shrink` 跳过保护。不同架构使用相同的素材快照。未关联 Release 的分支构建才使用在线下载，仍可能受外部源可用性影响。
 
-镜像会记录完整包的校验值；容器测试会检查本地素材清单、棋盘贴图、模型配置、地块表和 three.js 是否可访问。正常启动即可使用这些资源，实际 3D 渲染仍需浏览器支持 WebGL2，且未被玩家设置切换为 2D。该流程不运行完整浏览器游戏测试。
+镜像记录完整包的校验值与素材来源。容器测试检查全部清单引用文件存在且非空，同时检查素材清单、棋盘贴图、模型配置、地块表和 three.js 能否通过 HTTP 访问。实际 3D 渲染仍需浏览器支持 WebGL2，且未被玩家设置切换为 2D。该流程不运行完整浏览器游戏测试。
 
 手动构建未关联正式 Release 的分支或提交时，无法确定匹配的完整包，因此仅下载公开素材，不自动混用其他版本的本地素材。需要自行补充时，可以将匹配的 `public/assets/local/` 与 `data/local-assets.json` 分别只读挂载到 `/app/public/assets/local/` 和 `/app/data/local-assets.json`。不要用空目录覆盖镜像中的整个 `/app/public/assets`。
 
@@ -192,16 +191,18 @@ docker build -f Dockerfile --build-arg FETCH_ASSETS=1 -t stronghold-protocol:loc
 docker run --rm --init -p 3000:3000 stronghold-protocol:local
 ```
 
-`Dockerfile.dockerignore` 会覆盖上游的 `.dockerignore`，仅发送构建需要的文件。它会排除宿主机素材和依赖，由镜像内部重新生成。设 `FETCH_ASSETS=0` 可快速检查精简构建。
+`Dockerfile.dockerignore` 会覆盖上游的 `.dockerignore`，仅发送构建需要的文件。它会排除宿主机素材和依赖；构建阶段生成前端库并导入已校验的 Release 素材，或为分支构建在线下载素材。最终镜像复制整个筛选后的构建目录，避免另一份目录清单遗漏服务端依赖（如 Studio 导入的 `tools/assets/`）。设 `FETCH_ASSETS=0` 可快速检查精简构建。
 
-本地构建也要包含 Release 的 3D 素材时，需要 Python 3.11+，并让源码与素材使用同一个 Release（下面以 `v0.2.1` 为例）：
+本地构建正式 Release 时，推荐直接导入完整包素材。需要 Python 3.11+，源码与素材必须使用同一个 Release（下面以 `v0.3.1` 为例）：
 
 ```bash
-git -C upstream fetch --depth 1 origin tag v0.2.1
-git -C upstream checkout --detach v0.2.1
-python scripts/prepare-release-assets.py --tag v0.2.1 --destination upstream/.container-assets
+git -C upstream fetch --depth 1 origin tag v0.3.1
+git -C upstream checkout --detach v0.3.1
+python scripts/prepare-release-assets.py --tag v0.3.1 --destination upstream/.container-assets
 docker build -f Dockerfile --build-arg FETCH_ASSETS=1 --build-arg INCLUDE_LOCAL_ASSETS=1 -t stronghold-protocol:local ./upstream
 ```
+
+`INCLUDE_LOCAL_ASSETS=1` 沿用旧参数名，现在表示导入全部 Release 素材及配套清单，并跳过在线素材下载。旧版本脚本生成的仅本地素材目录需要重新准备。
 
 `.container-assets` 必须为空或不存在，避免混入其他版本素材；准备脚本仅需 Python 标准库，不依赖 UnityPy，也不启动游戏客户端。
 

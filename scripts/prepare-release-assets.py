@@ -1,4 +1,4 @@
-"""Copy version-matched local-client art from an upstream full Release, never its code/dependencies."""
+"""Copy all version-matched art and manifests from a full Release, never its code/dependencies."""
 import argparse
 import hashlib
 import json
@@ -10,14 +10,17 @@ import stat
 import tempfile
 import time
 from urllib.request import Request, urlopen
+from urllib.parse import unquote
 import zipfile
 
 
 PREFIX = "Stronghold-Protocol/"
 MANIFEST = "data/local-assets.json"
 LOCAL = "public/assets/local/"
+MANIFESTS = ("data/assets.json", MANIFEST, "data/local-fx.json")
+ASSET_DIRS = ("public/assets/", "public/fonts/")
 MAX_ARCHIVE = 2 * 1024**3
-MAX_LOCAL = 512 * 1024**2
+MAX_ASSETS = 4 * 1024**3
 
 
 def asset_for_release(repository, tag):
@@ -78,8 +81,11 @@ def manifest_paths(value):
     elif isinstance(value, list):
         for item in value:
             yield from manifest_paths(item)
-    elif isinstance(value, str) and value.startswith("/assets/local/"):
-        yield "public" + value
+    elif isinstance(value, str) and value.startswith(("/assets/", "/fonts/")):
+        # Upstream manifests use URL-encoded paths; ZIP entries use filesystem names.
+        relative = "public" + unquote(value, errors="strict")
+        safe_relative(relative)
+        yield relative
 
 
 def safe_relative(path):
@@ -89,7 +95,7 @@ def safe_relative(path):
     return Path(*parts)
 
 
-def extract_local_assets(archive, destination, tag):
+def extract_release_assets(archive, destination, tag):
     destination = destination.resolve()
     if destination.exists() and any(destination.iterdir()):
         raise ValueError("Asset destination must be empty to avoid mixing release versions")
@@ -102,25 +108,32 @@ def extract_local_assets(archive, destination, tag):
             if not info.filename.startswith(PREFIX) or info.is_dir():
                 continue
             relative = info.filename[len(PREFIX):]
-            if relative != MANIFEST and not relative.startswith(LOCAL):
+            if relative not in MANIFESTS and not relative.startswith(ASSET_DIRS):
                 continue
             safe_relative(relative)
             if stat.S_ISLNK(info.external_attr >> 16) or relative in selected or info.file_size <= 0:
                 raise ValueError(f"Invalid, duplicate, empty or symlink asset: {relative}")
             selected[relative] = info
-        if sum(info.file_size for info in selected.values()) > MAX_LOCAL:
-            raise ValueError("Local assets exceed the extraction size limit")
-        if MANIFEST not in selected:
-            raise ValueError("Full bundle is missing data/local-assets.json")
+        if sum(info.file_size for info in selected.values()) > MAX_ASSETS:
+            raise ValueError("Release assets exceed the extraction size limit")
+        for required_manifest in MANIFESTS[:2]:
+            if required_manifest not in selected:
+                raise ValueError(f"Full bundle is missing {required_manifest}")
         manifest = json.loads(bundle.read(selected[MANIFEST]))
         groups = manifest.get("groups", {})
         # These are the upstream renderer's board groups, not merely optional UI decorations.
         for group in ("map/autochess", "map/autochesssand", "mesh/map_autochess_bkg", "map/fx", "map/water"):
             if not groups.get(group):
                 raise ValueError(f"Missing 3D board asset group: {group}")
-        required = set(manifest_paths(manifest)) | {
+        required = {
             LOCAL + "map/autochess/tiles.json", LOCAL + "mesh/map_autochess_bkg/prefab.json",
         }
+        # Keep the bundle's manifests and art together: regenerating the public manifest
+        # against changing remote indexes can drop audio/model entries from this release.
+        # local-fx.json is optional for older releases, but all its references count if present.
+        for name in MANIFESTS:
+            if name in selected:
+                required.update(manifest_paths(json.loads(bundle.read(selected[name]))))
         if not required.issubset(selected):
             raise ValueError(f"Manifest references missing files: {sorted(required - selected.keys())[:5]}")
         # Validate the entire selection before writing; never extract executable bundle contents.
@@ -129,7 +142,7 @@ def extract_local_assets(archive, destination, tag):
             output.parent.mkdir(parents=True, exist_ok=True)
             with bundle.open(info) as source, output.open("wb") as target:
                 shutil.copyfileobj(source, target)
-        return len(selected) - 1
+        return sum(relative.startswith(ASSET_DIRS) for relative in selected)
 
 
 def main():
@@ -146,8 +159,8 @@ def main():
             verify_archive(archive, asset)
         else:
             download(asset, archive)
-        count = extract_local_assets(archive, args.destination, args.tag)
-    print(f"Verified {args.tag}: extracted {count} local asset files ({asset['digest']})")
+        count = extract_release_assets(archive, args.destination, args.tag)
+    print(f"Verified {args.tag}: extracted {count} release asset files ({asset['digest']})")
     if os.environ.get("GITHUB_OUTPUT"):
         with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
             output.write(f"digest={asset['digest']}\n")
