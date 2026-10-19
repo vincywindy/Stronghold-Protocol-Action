@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "sources": {
+    "your-project": {
+      "repository": "your-account/your-plugin-repository",
+      "ref": "main",
+      "revision": "0000000000000000000000000000000000000000"
+    }
+  },
+  "plugins": [
+    {
+      "source": "your-project",
+      "id": "my-plugin",
+      "name": "你的插件名称",
+      "version": "1.0.0",
+      "license": "NOASSERTION",
+      "adapter": "native",
+      "path": "plugins/my-plugin"
+    }
+  ]
+}

@@ -40,6 +40,15 @@ test('unchanged complete release ends the poll without dispatching publication',
   assert.ok(calls.every(({ url }) => !url.includes('docker.io')));
 });
 
+test('a manually started poll ignores manual plugin/tag state and still checks vanilla latest', async () => {
+  const { request, calls } = mock();
+  const result = await checkUpstream({ ...env, GITHUB_EVENT_NAME: 'workflow_dispatch',
+    IMAGE_TAG: 'friends', SELECTED_PLUGINS: 'lele/lele-rounds' }, request);
+  assert.equal(result.needed, false);
+  assert.ok(calls.some(({ url }) => url.endsWith('/manifests/latest')));
+  assert.ok(calls.every(({ url }) => !url.includes('friends') && !url.includes('lele')));
+});
+
 test('missing GHCR publication requests a build before probing Docker Hub', async () => {
   const { request, calls } = mock({ ghcrMissing: true });
   assert.equal((await checkUpstream(hubEnv, request)).needed, true);

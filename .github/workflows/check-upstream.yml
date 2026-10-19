@@ -21,7 +21,8 @@ jobs:
     permissions:
       contents: read
       packages: read
-      actions: write
+    outputs:
+      publish_needed: ${{ steps.check.outputs.publish_needed }}
     env:
       UPSTREAM_REPOSITORY: sganggs/Stronghold-Protocol
       REQUESTED_REF: ${{ vars.UPSTREAM_REF || 'latest' }}
@@ -38,14 +39,19 @@ jobs:
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
           DOCKERHUB_REPOSITORY: ${{ vars.DOCKERHUB_REPOSITORY }}
         run: node scripts/check-upstream.mjs
-      - name: Start publication only when needed
-        if: steps.check.outputs.publish_needed == 'true'
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
-        # Dispatch permits a separate build history; automatic builds recheck state after queuing.
-        run: |
-          gh workflow run docker.yml --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH" \
-            -f upstream_ref="$REQUESTED_REF" \
-            -f include_assets="$([[ "$FETCH_ASSETS" == '1' ]] && echo true || echo false)" \
-            -f check_published=true
+
+  publish:
+    needs: check
+    if: needs.check.outputs.publish_needed == 'true'
+    permissions:
+      contents: read
+      packages: write
+    # Reusable calls distinguish automatic polls from human dispatches without an exposed bypass checkbox.
+    uses: ./.github/workflows/docker.yml
+    with:
+      automatic: true
+      upstream_ref: ${{ vars.UPSTREAM_REF || 'latest' }}
+      include_assets: ${{ (vars.FETCH_ASSETS || '1') == '1' }}
+      plugins: ''
+      image_tag: ''
+    secrets: inherit

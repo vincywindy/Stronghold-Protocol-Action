@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
+import { createHash } from 'node:crypto';
 
 const base = process.env.SMOKE_URL || `http://127.0.0.1:${process.env.PORT || 3000}`;
 async function get(path) {
@@ -21,6 +22,19 @@ for (let attempt = 0; attempt < 60; attempt++) {
   }
 }
 assert.ok(ready, 'Server did not become healthy');
+if (process.env.EXPECT_PLUGINS) {
+  const inventory = JSON.parse(readFileSync('plugin-build.json', 'utf8'));
+  assert.deepEqual(inventory.plugins.map(p => p.key).sort(), process.env.EXPECT_PLUGINS.split(',').sort(), 'Image plugin selection differs from the requested build');
+  // Selection means bundling, not a promise that the current game can load the third-party package.
+  for (const plugin of inventory.plugins) {
+    assert.ok(existsSync(plugin.bundlePath), `Selected package was omitted from image: ${plugin.key}`);
+    if (plugin.sha256) assert.equal(createHash('sha256').update(readFileSync(plugin.bundlePath)).digest('hex'), plugin.sha256);
+    else assert.ok(existsSync(`${plugin.bundlePath}/plugin.json`), `Missing original manifest: ${plugin.key}`);
+  }
+  for (const id of inventory.installed) {
+    assert.ok(existsSync(`plugins/${id}/plugin.json`), `Installed plugin omitted from image: ${id}`);
+  }
+}
 assert.match(await (await get('/')).text(), /<html/i);
 for (const path of ['/vendor/pixi.min.js', '/vendor/preact.module.js', '/data/config.json']) {
   assert.ok((await (await get(path)).arrayBuffer()).byteLength > 0, `${path} is empty`);

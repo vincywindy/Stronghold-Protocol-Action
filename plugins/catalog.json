@@ -1,0 +1,389 @@
+{
+  "schemaVersion": 1,
+  "sources": {
+    "forge": {
+      "repository": "XiaMo233M/Stronghold-Protocol-Forge-Mods",
+      "revision": "0dc1a4fc9db9ead85bf41258046e92065bbf6e5f",
+      "ref": "main"
+    },
+    "lele": {
+      "repository": "llleeeqi/Stronghold-Protocol-Lele-Mods",
+      "revision": "90f06d473df8b5b30022623fd818f72c9c953d77",
+      "ref": "main"
+    }
+  },
+  "plugins": [
+    {
+      "source": "forge",
+      "id": "ave-mujica",
+      "name": "颂乐人偶",
+      "version": "1.1.0",
+      "license": "GPL-3.0-or-later",
+      "adapter": "forge",
+      "path": "mods/ave-mujica/1.1.0/mod.zip",
+      "sha256": "6a09a3cb39a2f0caacaaa055fdc1216473c234ef554ff067020c59e8e36fc06c"
+    },
+    {
+      "source": "forge",
+      "id": "boss-fixed-pool",
+      "name": "领袖固定血量（0.1.x 口径）",
+      "version": "1.0.0",
+      "license": "GPL-3.0-or-later",
+      "adapter": "forge",
+      "path": "mods/boss-fixed-pool/1.0.0/mod.zip",
+      "sha256": "29d56786d3c1d7ad048a6cd5fc8316228279adb04780e5ea7e7bda3dd7b6c28f"
+    },
+    {
+      "source": "forge",
+      "id": "capacity-panel",
+      "name": "房间容量看板（4/8/12/16/20 展示与预览）",
+      "version": "1.0.1",
+      "license": "GPL-3.0-or-later",
+      "adapter": "forge",
+      "path": "mods/capacity-panel/1.0.1/mod.zip",
+      "sha256": "7444fca6204e7e4cc60f89667a3a273d9e135e992b0eb4cd9db194f695a89f15"
+    },
+    {
+      "source": "forge",
+      "id": "cdn-source",
+      "name": "CDN 源选择（最快镜像）",
+      "version": "1.0.2",
+      "license": "GPL-3.0-or-later",
+      "adapter": "forge",
+      "path": "mods/cdn-source/1.0.2/mod.zip",
+      "sha256": "39574e4dd9fafa32a6148b350a530cf016c0ab6785a20ccdf959524108986d88"
+    },
+    {
+      "source": "forge",
+      "id": "chat-bubble",
+      "name": "局内文字聊天（房内气泡）",
+      "version": "1.0.0",
+      "license": "GPL-3.0-or-later",
+      "adapter": "forge",
+      "path": "mods/chat-bubble/1.0.0/mod.zip",
+      "sha256": "3346f0a383963ca5799f48ed93fe7e2113a04f17477418c656d66cc8345e8e34"
+    },
+    {
+      "source": "forge",
+      "id": "dmg-board",
+      "name": "伤害看板（结算页）",
+      "version": "1.0.0",
+      "license": "GPL-3.0-or-later",
+      "adapter": "forge",
+      "path": "mods/dmg-board/1.0.0/mod.zip",
+      "sha256": "d997e95a45160540f62e5482c90d602ce6431588ad6cf1e8c50721ac06699e2c"
+    },
+    {
+      "source": "forge",
+      "id": "duel-assets",
+      "name": "争锋频道 · 素材容器（客户端导出 · 非商业）",
+      "version": "0.1.0",
+      "license": "AGPL-3.0-or-later",
+      "adapter": "forge",
+      "path": "mods/duel-assets/0.1.0/mod.zip",
+      "sha256": "7103a1ca56c8bd8c72a1f33ad41dc999c6939fde462a641436ff8c0741424928"
+    },
+    {
+      "source": "forge",
+      "id": "duel-copy",
+      "name": "争锋频道 · 文案与不兼容清单",
+      "version": "0.1.0",
+      "license": "AGPL-3.0-or-later",
+      "adapter": "forge",
+      "path": "mods/duel-copy/0.1.0/mod.zip",
+      "sha256": "b43ecdfac8ed7b6a51268f1bff030eb39ba54e1706163df2df9cc828bdcaafcd"
+    },
+    {
+      "source": "forge",
+      "id": "duel-data",
+      "name": "争锋频道 · 规则资料（只读）",
+      "version": "0.1.0",
+      "license": "AGPL-3.0-or-later",
+      "adapter": "forge",
+      "path": "mods/duel-data/0.1.0/mod.zip",
+      "sha256": "58ea1c4e1fbfa2dbf47c63a57077e64a91f4f879cfa2f86543b5a7f1b36d39c9"
+    },
+    {
+      "source": "forge",
+      "id": "duel-fighter",
+      "name": "争锋频道 · 参战单位表（只读）",
+      "version": "0.1.0",
+      "license": "AGPL-3.0-or-later",
+      "adapter": "forge",
+      "path": "mods/duel-fighter/0.1.0/mod.zip",
+      "sha256": "6a5e416b5251e375bfe8635e6840ef22878aaa999f16c6806ecf411992240923"
+    },
+    {
+      "source": "forge",
+      "id": "duel-mode",
+      "name": "争锋频道 · 玩法叠加层（服务端驱动）",
+      "version": "0.2.1",
+      "license": "AGPL-3.0-or-later",
+      "adapter": "forge",
+      "path": "mods/duel-mode/0.2.1/mod.zip",
+      "sha256": "78580c4cb273b65c94dc24f4879e9a5197dc04bba30c846bc4906ad286bad9f0"
+    },
+    {
+      "source": "forge",
+      "id": "duel-panel",
+      "name": "争锋频道 · 接入状态面板（只读）",
+      "version": "0.1.0",
+      "license": "AGPL-3.0-or-later",
+      "adapter": "forge",
+      "path": "mods/duel-panel/0.1.0/mod.zip",
+      "sha256": "93fed50181455d1633f7067562f96baadf65f367933c7221e67d6933917c4de2"
+    },
+    {
+      "source": "forge",
+      "id": "fanpack-skillful-items",
+      "name": "灵巧盟约装备",
+      "version": "1.0.0",
+      "license": "非商业同人作品；《明日方舟》及其素材版权归鹰角网络所有。",
+      "adapter": "forge",
+      "path": "mods/fanpack-skillful-items/1.0.0/mod.zip",
+      "sha256": "70c903f3fa3336dfd0c9531b26ff4942de24330e31eb96bdf5a282f1663de24b"
+    },
+    {
+      "source": "forge",
+      "id": "healthz-ext",
+      "name": "健康与构建只读接口（/healthz 扩展 + /client-build 字段契约）",
+      "version": "1.0.0",
+      "license": "GPL-3.0-or-later",
+      "adapter": "forge",
+      "path": "mods/healthz-ext/1.0.0/mod.zip",
+      "sha256": "c5da20b17b186c6c5429f278262337165ec09f21e93bc2c57b6eeb10d3a0b20a"
+    },
+    {
+      "source": "forge",
+      "id": "makoto-yuki",
+      "name": "结城理（Persona 3 Reload）",
+      "version": "1.0.1",
+      "license": "NOASSERTION",
+      "adapter": "forge",
+      "path": "mods/makoto-yuki/1.0.1/mod.zip",
+      "sha256": "3873c55cf62f8ea4f573be5a7d4d2ebc809a6b3e1ba0e0e1e76224d6f565fbe1"
+    },
+    {
+      "source": "forge",
+      "id": "mod-xie",
+      "name": "促融共竞 · 协同共竞",
+      "version": "2.1.0",
+      "license": "GPL-3.0-or-later",
+      "adapter": "forge",
+      "path": "mods/mod-xie/2.1.0/mod.zip",
+      "sha256": "6613cd2e5a947a5370341fcd3a1b6a3f9069bc5c871078f27965561ac27e12ec"
+    },
+    {
+      "source": "forge",
+      "id": "morph-plus",
+      "name": "变形同构体加强mod",
+      "version": "1.1.0",
+      "license": "NOASSERTION",
+      "adapter": "forge",
+      "path": "mods/morph-plus/1.1.0/mod.zip",
+      "sha256": "f232b8435ec5635f69fe4b987186f67f451354c647d338945d97997dad7b1179"
+    },
+    {
+      "source": "forge",
+      "id": "name-guard",
+      "name": "代号审查（名字策略链）",
+      "version": "1.0.0",
+      "license": "GPL-3.0-or-later（代码与包本体）；词典数据另随包保留授权：英文/中文脏话 LDNOOBW（CC-BY-4.0），政治/成人/违法分类 fwwdn 与 houbb（Apache-2.0），见 NOTICE-来源说明.md",
+      "adapter": "forge",
+      "path": "mods/name-guard/1.0.0/mod.zip",
+      "sha256": "3c393674a56b51dbd221d59923ab5494a119ce4bdff609a33fe7d943cc4b1b47"
+    },
+    {
+      "source": "forge",
+      "id": "net-panel",
+      "name": "连接与服务器状态",
+      "version": "1.0.0",
+      "license": "GPL-3.0-or-later",
+      "adapter": "forge",
+      "path": "mods/net-panel/1.0.0/mod.zip",
+      "sha256": "5eefe0afac5a421517cca89837170203c6af1fa8b8673de9d77e17c5ffd2762b"
+    },
+    {
+      "source": "forge",
+      "id": "notice-board",
+      "name": "服务器公告板（notices）",
+      "version": "1.0.0",
+      "license": "CC0-1.0（公告文本与包本体；文本来源与两栏结构见 NOTICE-来源说明.md）",
+      "adapter": "forge",
+      "path": "mods/notice-board/1.0.0/mod.zip",
+      "sha256": "6a25ab1013e10924121a95a33b7c923fff282aa5dae4fc3a7e82efc35707c517"
+    },
+    {
+      "source": "forge",
+      "id": "perf-lite",
+      "name": "低配优化（关动画与过渡）",
+      "version": "1.0.0",
+      "license": "GPL-3.0-or-later",
+      "adapter": "forge",
+      "path": "mods/perf-lite/1.0.0/mod.zip",
+      "sha256": "891ba0b6118d6af01b1f98b07af4df0659de4f1dcc806366ab20ef6874965c62"
+    },
+    {
+      "source": "forge",
+      "id": "prep-loadout",
+      "name": "休整期可更换技能和模组mod",
+      "version": "1.0.0",
+      "license": "NOASSERTION",
+      "adapter": "forge",
+      "path": "mods/prep-loadout/1.0.0/mod.zip",
+      "sha256": "1059bce6db2aa3b3e71ef67ef542b408ac7fb684673c489ef8c88d613a7600de"
+    },
+    {
+      "source": "forge",
+      "id": "shop-bond-bias",
+      "name": "商店刷新盟约装备几率提升mod",
+      "version": "1.0.0",
+      "license": "NOASSERTION",
+      "adapter": "forge",
+      "path": "mods/shop-bond-bias/1.0.0/mod.zip",
+      "sha256": "689804b53a7867f82bc1528b4e3d239a6ff222344a30c40a5763e10ca93d2a85"
+    },
+    {
+      "source": "forge",
+      "id": "skin-catalogue",
+      "name": "时装目录（皮肤数据）",
+      "version": "1.0.0",
+      "license": "代码 GPL-3.0-or-later；时装美术 © Hypergryph / Yostar，仅个人非商业使用，随包再分发由其分发者承担",
+      "adapter": "forge",
+      "path": "mods/skin-catalogue/1.0.0/mod.zip",
+      "sha256": "b13ebe2ee56ca36ff281011c888d163fdc5d33406f46c9c6ff722ff103de6970"
+    },
+    {
+      "source": "forge",
+      "id": "skin-picker",
+      "name": "皮肤选择器（换装）",
+      "version": "1.0.0",
+      "license": "GPL-3.0-or-later",
+      "adapter": "forge",
+      "path": "mods/skin-picker/1.0.0/mod.zip",
+      "sha256": "b1d39ea35a19d94b4992dc32a01f10b95e1dd9e77e488121220965610f757bdd"
+    },
+    {
+      "source": "forge",
+      "id": "srv-notice",
+      "name": "服务器公告",
+      "version": "1.0.0",
+      "license": "CC0-1.0",
+      "adapter": "forge",
+      "path": "mods/srv-notice/1.0.0/mod.zip",
+      "sha256": "17fce005594b81e443cf6a64c3352219aa15347ebe82cac71a30699e751cbf81"
+    },
+    {
+      "source": "forge",
+      "id": "strawberry-ui",
+      "name": "草莓美化包（纯 CSS）",
+      "version": "1.0.0",
+      "license": "GPL-3.0-or-later",
+      "adapter": "forge",
+      "path": "mods/strawberry-ui/1.0.0/mod.zip",
+      "sha256": "e3fc66707c0b186630776bf9fdd2a84a7b969e3779fda7478554dd803dd6e46b"
+    },
+    {
+      "source": "forge",
+      "id": "theme-night",
+      "name": "夜间高对比主题",
+      "version": "1.0.0",
+      "license": "GPL-3.0-or-later",
+      "adapter": "forge",
+      "path": "mods/theme-night/1.0.0/mod.zip",
+      "sha256": "2af54e3a83c9144bfbcb01898689a768d720d9a87e2f7db47ae1c3a0911d9e43"
+    },
+    {
+      "source": "forge",
+      "id": "unequip",
+      "name": "装备拆卸mod",
+      "version": "1.1.0",
+      "license": "NOASSERTION",
+      "adapter": "forge",
+      "path": "mods/unequip/1.1.0/mod.zip",
+      "sha256": "6e646b067cc23c43a5b695885299fc6e3bfc26ab45e7d68ca678d62257b6e8b6"
+    },
+    {
+      "source": "forge",
+      "id": "ws-compression-reference",
+      "name": "WS 压缩参考（协商参数 / 档位 / 实测）",
+      "version": "1.0.0",
+      "license": "MIT",
+      "adapter": "forge",
+      "path": "mods/ws-compression-reference/1.0.0/mod.zip",
+      "sha256": "ba194faf0b4116834202eeec39c3cf9b79c27ddf2ad42c785e4b86afd2650a5b"
+    },
+    {
+      "source": "lele",
+      "id": "lele-damage",
+      "name": "伤害统计",
+      "version": "0.3.3",
+      "license": "GPL-3.0-or-later",
+      "adapter": "lele",
+      "path": "plugins/lele-damage"
+    },
+    {
+      "source": "lele",
+      "id": "lele-factions",
+      "name": "更多阵营",
+      "version": "0.3.3",
+      "license": "GPL-3.0-or-later",
+      "adapter": "lele",
+      "path": "plugins/lele-factions"
+    },
+    {
+      "source": "lele",
+      "id": "lele-lucky",
+      "name": "恭喜发财",
+      "version": "0.3.3",
+      "license": "GPL-3.0-or-later",
+      "adapter": "lele",
+      "path": "plugins/lele-lucky"
+    },
+    {
+      "source": "lele",
+      "id": "lele-operators",
+      "name": "新干员包",
+      "version": "0.3.3",
+      "license": "GPL-3.0-or-later",
+      "adapter": "lele",
+      "path": "plugins/lele-operators"
+    },
+    {
+      "source": "lele",
+      "id": "lele-recruits",
+      "name": "额外干员包",
+      "version": "0.3.3",
+      "license": "GPL-3.0-or-later",
+      "adapter": "lele",
+      "path": "plugins/lele-recruits"
+    },
+    {
+      "source": "lele",
+      "id": "lele-relics",
+      "name": "收藏品玩法",
+      "version": "0.3.3",
+      "license": "GPL-3.0-or-later",
+      "adapter": "lele",
+      "path": "plugins/lele-relics"
+    },
+    {
+      "source": "lele",
+      "id": "lele-rounds",
+      "name": "额外 4 回合",
+      "version": "0.3.3",
+      "license": "GPL-3.0-or-later",
+      "adapter": "lele",
+      "path": "plugins/lele-rounds"
+    },
+    {
+      "source": "lele",
+      "id": "lele-targeted",
+      "name": "定向甄选",
+      "version": "0.3.3",
+      "license": "GPL-3.0-or-later",
+      "adapter": "lele",
+      "path": "plugins/lele-targeted"
+    }
+  ]
+}

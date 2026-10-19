@@ -8,6 +8,7 @@ on:
       - 'Dockerfile*'
       - 'scripts/**'
       - 'tests/**'
+      - 'plugins/**'
       - 'compose.yaml'
       - '.env.example'
   pull_request:
@@ -16,6 +17,7 @@ on:
       - 'Dockerfile*'
       - 'scripts/**'
       - 'tests/**'
+      - 'plugins/**'
       - 'compose.yaml'
       - '.env.example'
   workflow_dispatch:
@@ -28,33 +30,63 @@ on:
         description: 'Include public art/audio and same-release local art (including 3D board)'
         type: boolean
         default: true
-      check_published:
-        description: 'Skip an already published image (used by the upstream checker); leave unchecked to force rebuild'
+      image_tag:
+        description: 'Custom image tag (required with plugins; latest/sha/release tags are reserved)'
+        type: string
+        default: ''
+      plugins:
+        description: 'Plugin keys separated by commas; use the Plugins workflows for checkboxes'
+        type: string
+        default: ''
+  workflow_call:
+    inputs:
+      upstream_ref:
+        type: string
+        default: ''
+      include_assets:
+        type: boolean
+        default: true
+      image_tag:
+        type: string
+        default: ''
+      plugins:
+        type: string
+        default: ''
+      automatic:
+        description: 'Internal vanilla poll; unavailable in the manual dispatch form'
         type: boolean
         default: false
+    secrets:
+      DOCKERHUB_USERNAME:
+        required: false
+      DOCKERHUB_TOKEN:
+        required: false
 
 permissions:
   contents: read
 
 # Serialize publishers on the default branch so an older run cannot overwrite a newer latest.
 concurrency:
-  group: docker-${{ github.workflow }}-${{ github.ref }}
+  group: docker-publish-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   UPSTREAM_REPOSITORY: sganggs/Stronghold-Protocol
   REQUESTED_REF: ${{ inputs.upstream_ref || vars.UPSTREAM_REF || 'latest' }}
   NODE_IMAGE: ${{ vars.NODE_IMAGE || 'node:22-alpine' }}
+  SELECTED_PLUGINS: ${{ inputs.plugins || '' }}
+  IMAGE_TAG: ${{ inputs.image_tag || '' }}
+  AUTOMATED_BUILD: ${{ inputs.automatic && 'true' || 'false' }}
   # PRs validate the recipe without the large asset download. Manual choices override variables.
   FETCH_ASSETS: >-
     ${{ github.event_name == 'pull_request' && '0' ||
-        github.event_name == 'workflow_dispatch' && (inputs.include_assets && '1' || '0') ||
+        (github.event_name == 'workflow_dispatch' || inputs.automatic) && (inputs.include_assets && '1' || '0') ||
         vars.FETCH_ASSETS || '1' }}
 
 jobs:
   validate:
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    timeout-minutes: 90
     permissions:
       contents: read
       packages: read
@@ -68,14 +100,25 @@ jobs:
       version_tag: ${{ steps.metadata.outputs.version_tag }}
       local_assets: ${{ steps.upstream.outputs.release_tag != '' && env.FETCH_ASSETS == '1' }}
       bundle_digest: ${{ steps.assets.outputs.digest }}
+      plugins: ${{ steps.plugins.outputs.selection }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22'
+      - name: Validate plugin selection and tag policy before downloads
+        id: plugins
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: node scripts/validate-plugin-inputs.mjs
       - name: Test image publishing rules
         run: node --test tests/*.test.mjs
       - name: Test release asset validation
         run: python3 -m unittest discover -s tests -p 'test_*.py'
+      - name: Verify generated plugin selectors
+        run: node scripts/generate-plugin-workflows.mjs --check
       - name: Validate workflow syntax
         run: |
           docker run --rm -v "$PWD:/repo" -w /repo \
@@ -105,6 +148,7 @@ jobs:
           DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
           RELEASE_TAG: ${{ steps.upstream.outputs.release_tag }}
           IS_LATEST_RELEASE: ${{ steps.upstream.outputs.is_latest }}
+          SELECTED_PLUGINS: ${{ steps.plugins.outputs.selection }}
         run: |
           UPSTREAM_SHA=$(git -C upstream rev-parse HEAD)
           export UPSTREAM_SHA
@@ -114,7 +158,7 @@ jobs:
       - name: Check whether this Release is already published
         id: check
         env:
-          CHECK_PUBLISHED: ${{ github.event_name == 'workflow_dispatch' && inputs.check_published }}
+          CHECK_PUBLISHED: ${{ inputs.automatic == true }}
           VERSION_TAG: ${{ steps.metadata.outputs.check_tag }}
           LATEST_TAG: ${{ steps.upstream.outputs.is_latest == 'true' && steps.metadata.outputs.latest_tag || '' }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -130,7 +174,7 @@ jobs:
         run: python3 scripts/prepare-release-assets.py --tag "$RELEASE_TAG" --destination "$RUNNER_TEMP/release-assets"
 
       - name: Share verified art with both architecture builds
-        if: steps.assets.outcome == 'success'
+        if: steps.assets.outcome == 'success' && steps.plugins.outputs.selection == ''
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-assets
@@ -139,6 +183,41 @@ jobs:
           retention-days: 1
           # PNG/audio/model files are already compressed; avoid recompressing the full art bundle.
           compression-level: 0
+
+      - name: Resolve latest plugin sources once and prepare selected packages
+        if: steps.check.outputs.build == 'true' && steps.plugins.outputs.selection != ''
+        env:
+          SELECTED_PLUGINS: ${{ steps.plugins.outputs.selection }}
+          RELEASE_ART: ${{ steps.assets.outcome == 'success' && 'true' || 'false' }}
+        run: |
+          if [[ "$RELEASE_ART" == true ]]; then
+            cp -R "$RUNNER_TEMP/release-assets/public/." upstream/public/
+            cp -R "$RUNNER_TEMP/release-assets/data/." upstream/data/
+          fi
+          node scripts/prepare-plugins.mjs upstream
+          tar --exclude=.git --exclude=node_modules --exclude=.cache -C upstream -czf "$RUNNER_TEMP/plugin-source.tar.gz" .
+          cat upstream/plugin-build.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Share identical prepared plugin source and art with both architectures
+        if: steps.check.outputs.build == 'true' && steps.plugins.outputs.selection != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: plugin-source
+          path: ${{ runner.temp }}/plugin-source.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+      - name: Preserve plugin provenance and import diagnostics
+        if: always() && steps.plugins.outputs.selection != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: plugin-reports
+          path: |
+            upstream/plugin-build.json
+            upstream/plugin-build-reports/
+          if-no-files-found: ignore
+          retention-days: 14
 
   build:
     needs: validate
@@ -165,6 +244,7 @@ jobs:
           persist-credentials: false
 
       - name: Check out resolved upstream commit
+        if: needs.validate.outputs.plugins == ''
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ env.UPSTREAM_REPOSITORY }}
@@ -172,8 +252,21 @@ jobs:
           path: upstream
           persist-credentials: false
 
+      - name: Download prepared plugin source
+        if: needs.validate.outputs.plugins != ''
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: plugin-source
+          path: ${{ runner.temp }}/plugin-source
+
+      - name: Unpack prepared plugin source
+        if: needs.validate.outputs.plugins != ''
+        run: |
+          mkdir -p upstream
+          tar -xzf "$RUNNER_TEMP/plugin-source/plugin-source.tar.gz" -C upstream
+
       - name: Download verified release art
-        if: needs.validate.outputs.local_assets == 'true'
+        if: needs.validate.outputs.local_assets == 'true' && needs.validate.outputs.plugins == ''
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: release-assets
@@ -214,6 +307,7 @@ jobs:
             NODE_IMAGE=${{ env.NODE_IMAGE }}
             FETCH_ASSETS=${{ env.FETCH_ASSETS }}
             INCLUDE_LOCAL_ASSETS=${{ needs.validate.outputs.local_assets == 'true' && '1' || '0' }}
+            PREPARED_PLUGINS=${{ needs.validate.outputs.plugins != '' && '1' || '0' }}
           labels: |
             org.opencontainers.image.title=Stronghold Protocol
             org.opencontainers.image.description=Unofficial Stronghold Protocol container; see /app/NOTICE.md for asset terms
@@ -227,6 +321,7 @@ jobs:
             io.github.stronghold-protocol.local-assets=${{ needs.validate.outputs.local_assets == 'true' && 'release' || 'none' }}
             io.github.stronghold-protocol.asset-source=${{ needs.validate.outputs.local_assets == 'true' && 'release-bundle' || (env.FETCH_ASSETS == '1' && 'download' || 'none') }}
             io.github.stronghold-protocol.release-bundle-digest=${{ needs.validate.outputs.bundle_digest }}
+            io.github.stronghold-protocol.plugins=${{ needs.validate.outputs.plugins }}
           cache-from: type=gha,scope=${{ matrix.arch }}-assets${{ env.FETCH_ASSETS }}
           cache-to: type=gha,mode=max,scope=${{ matrix.arch }}-assets${{ env.FETCH_ASSETS }}
           provenance: ${{ needs.validate.outputs.publish == 'true' && 'mode=max' || 'false' }}
@@ -237,6 +332,7 @@ jobs:
           IMAGE_REF: ${{ needs.validate.outputs.publish == 'true' && format('{0}@{1}', needs.validate.outputs.image, steps.image.outputs.digest) || 'stronghold-test:local' }}
           PLATFORM: linux/${{ matrix.arch }}
           EXPECT_LOCAL_ASSETS: ${{ needs.validate.outputs.local_assets == 'true' && '1' || '0' }}
+          EXPECT_PLUGINS: ${{ needs.validate.outputs.plugins }}
         run: bash scripts/smoke-image.sh "$IMAGE_REF" "$PLATFORM"
 
       - name: Record tested image digest

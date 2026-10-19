@@ -11,13 +11,18 @@ RUN npm ci --omit=dev --ignore-scripts --no-audit --no-fund \
 FROM dependencies AS build
 ARG FETCH_ASSETS=1
 ARG INCLUDE_LOCAL_ASSETS=0
+ARG PREPARED_PLUGINS=0
 COPY . .
 # Older upstream releases have no packs/; keeping an empty directory lets them build too.
 # INCLUDE_LOCAL_ASSETS retains its existing name, but now imports ALL verified Release art.
-# Release builds must not regenerate manifests against mutable third-party audio/model indexes.
-RUN mkdir -p packs public/assets \
+# Vanilla releases keep their verified manifests; plugin builds arrive with their prepared art snapshot.
+RUN if [ "$PREPARED_PLUGINS" = 1 ]; then cp -R .plugin-art/. .; fi \
+    && mkdir -p packs public/assets \
     && node tools/vendor.mjs \
-    && case "$FETCH_ASSETS:$INCLUDE_LOCAL_ASSETS" in \
+    && if [ "$PREPARED_PLUGINS" = 1 ]; then \
+         test -s plugin-build.json; \
+       else \
+       test "$PREPARED_PLUGINS" = 0 && case "$FETCH_ASSETS:$INCLUDE_LOCAL_ASSETS" in \
          1:1) test -f .container-assets/data/assets.json \
               && test -f .container-assets/data/local-assets.json \
               && cp -R .container-assets/public/. public/ \
@@ -25,8 +30,9 @@ RUN mkdir -p packs public/assets \
          1:0) node tools/fetch-assets.mjs ;; \
          0:0) echo "Building without downloaded game assets" ;; \
          *) echo "Expected FETCH_ASSETS:INCLUDE_LOCAL_ASSETS = 1:1, 1:0 or 0:0" >&2; exit 1 ;; \
-       esac \
-    && rm -rf .container-assets .cache
+       esac; \
+       fi \
+    && rm -rf .container-assets .plugin-art .cache
 FROM ${NODE_IMAGE} AS runtime
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \

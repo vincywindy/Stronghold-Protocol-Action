@@ -14,7 +14,8 @@ export async function checkUpstream(env, request = fetch) {
     signal: AbortSignal.timeout(30000),
   });
   if (!commit.ok) throw new Error(`GitHub commit lookup failed: HTTP ${commit.status}`);
-  const metadata = imageMetadata({ ...env, UPSTREAM_SHA: (await commit.json()).sha,
+  // A manually started poll still checks the vanilla automatic publication, never a manual tag.
+  const metadata = imageMetadata({ ...env, AUTOMATED_BUILD: 'true', IMAGE_TAG: '', SELECTED_PLUGINS: '', UPSTREAM_SHA: (await commit.json()).sha,
     RELEASE_TAG: upstream.releaseTag, IS_LATEST_RELEASE: String(upstream.isLatest) });
   const sourceDigest = await publishedReleaseDigest({ repository: env.GITHUB_REPOSITORY.toLowerCase(),
     versionTag: metadata.checkTag, latestTag: upstream.isLatest ? metadata.latestTag : '',

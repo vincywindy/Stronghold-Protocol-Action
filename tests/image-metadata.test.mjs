@@ -11,6 +11,8 @@ const base = {
   DEFAULT_BRANCH: 'main',
   RELEASE_TAG: 'v0.2.1',
   IS_LATEST_RELEASE: 'true',
+  GITHUB_RUN_ID: '123',
+  GITHUB_RUN_ATTEMPT: '2',
 };
 
 test('scheduled tracked builds publish lowercase GHCR tags', () => {
@@ -28,11 +30,41 @@ test('lite builds cannot overwrite asset-inclusive tags', () => {
   assert.ok(result.tags.every((tag) => tag.endsWith('-lite')));
 });
 
-test('historical releases get their own version but never advance latest', () => {
-  const result = imageMetadata({ ...base, GITHUB_EVENT_NAME: 'workflow_dispatch', RELEASE_TAG: 'v0.1.4', IS_LATEST_RELEASE: 'false' });
+test('automatic historical releases get their own version but never advance latest', () => {
+  const result = imageMetadata({ ...base, GITHUB_EVENT_NAME: 'workflow_dispatch', AUTOMATED_BUILD: 'true', RELEASE_TAG: 'v0.1.4', IS_LATEST_RELEASE: 'false' });
   assert.equal(result.publish, true);
   assert.equal(result.tags.length, 2);
   assert.equal(result.tags[1], 'ghcr.io/example/stronghold-protocol-action:v0.1.4');
+});
+
+test('every human build is isolated from latest, release and upstream-SHA tags', () => {
+  for (const FETCH_ASSETS of ['0', '1']) {
+    const result = imageMetadata({ ...base, GITHUB_EVENT_NAME: 'workflow_dispatch', FETCH_ASSETS });
+    assert.deepEqual(result.tags, [`${result.image}:manual-123-2${FETCH_ASSETS === '0' ? '-lite' : ''}`]);
+    assert.equal(result.latestTag, '');
+  }
+});
+
+test('plugin builds require explicit custom tags and publish that tag only', () => {
+  const manual = { ...base, GITHUB_EVENT_NAME: 'workflow_dispatch', SELECTED_PLUGINS: 'forge/theme-night' };
+  assert.throws(() => imageMetadata(manual), /explicit image_tag/);
+  const result = imageMetadata({ ...manual, IMAGE_TAG: 'friends-031' });
+  assert.deepEqual(result.tags, [`${result.image}:friends-031`]);
+  assert.equal(result.latestTag, '');
+  assert.equal(result.checkTag, 'friends-031');
+  assert.throws(() => imageMetadata({ ...manual, AUTOMATED_BUILD: 'true', IMAGE_TAG: 'friends' }), /manual build/);
+  assert.throws(() => imageMetadata({ ...manual, GITHUB_EVENT_NAME: 'push', IMAGE_TAG: 'friends' }), /manual build/);
+});
+
+test('manual tags cannot collide with automatic publication namespaces or inject output', () => {
+  for (const IMAGE_TAG of ['latest', 'latest-lite', 'LATEST', 'sha-abc', 'v0.3.1', '0.3.1-lite', 'bad/tag', 'bad\nvalue', '-bad', 'a'.repeat(129)]) {
+    assert.throws(() => imageMetadata({ ...base, GITHUB_EVENT_NAME: 'workflow_dispatch', IMAGE_TAG }));
+  }
+  assert.throws(() => imageMetadata({ ...base, IMAGE_TAG: 'custom' }), /only allowed/);
+});
+
+test('internal poll calls retain automatic vanilla aliases, including manually triggered polls', () => {
+  assert.deepEqual(imageMetadata({ ...base, GITHUB_EVENT_NAME: 'workflow_dispatch', AUTOMATED_BUILD: 'true' }).tags, imageMetadata(base).tags);
 });
 
 test('unreleased branches get only a SHA tag', () => {
