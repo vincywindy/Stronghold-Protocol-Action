@@ -2,7 +2,9 @@
 
 由 `plugins/catalog.json` 生成。所有检索到的条目均可选择，不按兼容性筛选。名称使用「仓库名 + 插件名」。
 
-在 Actions 的 **Build and publish Docker image** → **Run workflow** 中，插件 1–21 的每个下拉框均包含全部仓库的插件，可自由混选。默认均为“不添加插件”，重复选择自动去重。超过 21 项或批量选择可在 `plugins` 填入下表的选择键（逗号分隔），与下拉框选择合并。
+在 Actions 的 **Build and publish Docker image** → **Run workflow** 中，勾选所需仓库并填写对应 filter，可同时勾选多个仓库。默认全部不勾选；勾选后 filter 留空表示添加该仓库全部已收录插件。
+
+filter 按插件 ID、名称或下表选择键做不区分大小写的字面子串匹配。多个词用逗号（中英文均可）或空白分隔：`xxx` 包含匹配项，`!xxx` 排除匹配项；多个包含词取并集，排除始终优先。只有排除词时从该仓库全部插件中排除。不使用正则或通配符；未勾选仓库的 filter 被忽略。勾选后筛选结果为空会报错，避免误构建原版镜像。
 
 表中版本是检索快照；手动构建会获取来源 ref 的最新提交，并从该提交获取所选包的最新版本。实际版本和完整 SHA 见镜像 `/app/plugin-build.json`。
 
@@ -54,4 +56,4 @@
 - forge: [XiaMo233M/Stronghold-Protocol-Forge-Mods](https://github.com/XiaMo233M/Stronghold-Protocol-Forge-Mods)，ref: `main`；[目录检索快照](https://github.com/XiaMo233M/Stronghold-Protocol-Forge-Mods/tree/0dc1a4fc9db9ead85bf41258046e92065bbf6e5f)。
 - lele: [llleeeqi/Stronghold-Protocol-Lele-Mods](https://github.com/llleeeqi/Stronghold-Protocol-Lele-Mods)，ref: `main`；[目录检索快照](https://github.com/llleeeqi/Stronghold-Protocol-Lele-Mods/tree/90f06d473df8b5b30022623fd818f72c9c953d77)。
 
-刷新新增插件：`node scripts/refresh-plugin-catalog.mjs`，再运行 `node scripts/generate-plugin-workflows.mjs` 并提交生成文件。GitHub 下拉框是静态配置，需要合并目录更新才会出现新条目；已有插件更新无需修改下拉框。生成器只更新主工作流的插件输入区和本列表。
+刷新新增插件：`node scripts/refresh-plugin-catalog.mjs`，再运行 `node scripts/generate-plugin-workflows.mjs` 并提交生成文件。筛选范围是已合并的目录，新增条目需合并目录后才能选择；已有插件更新无需改 Action。生成器按来源生成复选框和 filter，只更新主工作流的插件输入区和本列表。

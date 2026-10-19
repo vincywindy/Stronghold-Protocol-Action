@@ -38,22 +38,36 @@ export function selectPlugins(input = '', catalog = readCatalog()) {
   });
 }
 export function displayName(plugin, catalog) { return `${catalog.sources[plugin.source].repository.split('/')[1]} + ${plugin.name}`; }
-// GitHub allows 25 dispatch fields; reserve four for build settings and free-form overflow.
-export const pluginSlots = Array.from({ length: 21 }, (_, i) => `plugin_${String(i + 1).padStart(2, '0')}`);
-export const noPlugin = '不添加插件';
-export function pluginOption(plugin, catalog) { return `${displayName(plugin, catalog)} [${plugin.source}/${plugin.id}]`; }
+export function filterSourcePlugins(source, filter = '', catalog = readCatalog()) {
+  if (typeof filter !== 'string') throw new Error(`Invalid filter for ${source}: expected text`);
+  if (!Object.hasOwn(catalog.sources, source)) throw new Error(`Unknown plugin source: ${source}`);
+  const terms = filter.toLowerCase().split(/[\s,，]+/u).filter(Boolean);
+  if (terms.includes('!')) throw new Error(`Invalid filter for ${source}: ! must be followed by a keyword`);
+  const include = terms.filter(term => !term.startsWith('!'));
+  const exclude = terms.filter(term => term.startsWith('!')).map(term => term.slice(1));
+  return catalog.plugins.filter(plugin => {
+    if (plugin.source !== source) return false;
+    const fields = [plugin.id, plugin.name, `${source}/${plugin.id}`].map(value => value.toLowerCase());
+    const matches = term => fields.some(value => value.includes(term));
+    // Positive terms are ORed; exclusions always win, independent of expression order.
+    // Without positive terms, start from the whole selected repository (including an empty filter).
+    return (!include.length || include.some(matches)) && !exclude.some(matches);
+  });
+}
 export function selectBuildPlugins(env, catalog = readCatalog()) {
   const keys = [env.SELECTED_PLUGINS || ''];
-  // Polling can itself originate from workflow_dispatch; only human builds consume dropdowns.
+  // Polling can itself originate from workflow_dispatch; only human builds consume repository filters.
   if (env.GITHUB_EVENT_NAME === 'workflow_dispatch' && env.AUTOMATED_BUILD !== 'true') {
     const inputs = JSON.parse(env.WORKFLOW_INPUTS || '{}');
     if (!inputs || typeof inputs !== 'object' || Array.isArray(inputs)) throw new Error('Invalid workflow inputs');
-    for (const slot of pluginSlots) {
-      const value = inputs[slot];
-      if (value === undefined || value === '' || value === noPlugin) continue;
-      const plugin = catalog.plugins.find(p => pluginOption(p, catalog) === value);
-      if (!plugin) throw new Error(`Unknown plugin option in ${slot}: ${value}`);
-      keys.push(`${plugin.source}/${plugin.id}`);
+    for (const source of Object.keys(catalog.sources)) {
+      const enabled = inputs[`plugins_${source}`];
+      if (enabled === undefined || enabled === false || enabled === 'false') continue;
+      if (enabled !== true && enabled !== 'true') throw new Error(`Invalid repository checkbox: plugins_${source}`);
+      const selected = filterSourcePlugins(source, inputs[`${source}_filter`] ?? '', catalog);
+      // A typo or an over-broad exclusion must not silently publish a vanilla image.
+      if (!selected.length) throw new Error(`No plugins matched ${source}_filter; change the filter or uncheck plugins_${source}`);
+      keys.push(...selected.map(plugin => `${source}/${plugin.id}`));
     }
   }
   return selectPlugins(keys.join(','), catalog);

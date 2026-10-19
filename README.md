@@ -65,12 +65,25 @@ GitHub 可能排队延迟或丢弃高负载时的调度，不能保证准点执�
 | 乐勒砳插件 | [llleeeqi/Stronghold-Protocol-Lele-Mods](https://github.com/llleeeqi/Stronghold-Protocol-Lele-Mods) | `lele/` |
 
 1. 打开 Actions 中的 **Build and publish Docker image**，点击 **Run workflow**。原来的分仓库插件工作流已合并到此入口。
-2. 在 **插件 1–21** 的下拉框中选择插件。**每个下拉框都包含所有仓库的插件，可以自由混选**，名称为 **仓库名 + 插件名 [选择键]**，默认均为“不添加插件”。当前目录包含 Forge 30 项、乐勒砳 8 项，完整列表见 [插件目录](plugins/README.md)。
+2. 勾选 **Stronghold-Protocol-Forge-Mods**（`plugins_forge`）和/或 **Stronghold-Protocol-Lele-Mods**（`plugins_lele`）。**两个仓库可以同时勾选，筛选后的插件会一起加入镜像**。默认均不勾选。当前目录包含 Forge 30 项、乐勒砳 8 项，名称按 **仓库名 + 插件名** 展示，完整列表见 [插件目录](plugins/README.md)。
 3. 填写 `image_tag`，例如 `friends-031`，并选择游戏版本与是否包含素材。
-4. 例如在“插件 1”选择 Forge 的夜间主题，在“插件 2”选择乐勒砳的回合插件，即可一起打包。超过 21 项或批量选择时，在 `plugins` 填入逗号分隔的选择键，例如 `forge/theme-night,lele/lele-rounds`；该字段与下拉框选择合并，重复项自动去重。无需填满所有下拉框。
+4. 分别在 `forge_filter`、`lele_filter` 填写筛选表达式；**勾选仓库后留空 filter 表示添加该仓库全部已收录插件**。例如同时勾选两个仓库，Forge 填 `theme-night,unequip`，乐勒砳填 `rounds`，即可混合打包这三个插件。
 5. 等待两个架构验证后发布；部署时将 Compose 的 `image` 改为该自定义标签。
 
-GitHub 每个手动工作流最多 25 个输入项，且下拉框只能单选，因此统一表单采用 21 个插件选择位，加上版本、素材、镜像标签和补充插件 4 个字段。全部插件都能从每个选择位中找到，无需切换工作流；`plugins` 字段可补充任意数量的已收录插件。下拉选项由目录自动生成。参考 [GitHub workflow_dispatch 文档](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onworkflow_dispatchinputs)。
+每个仓库只有一个 checkbox 和一个 filter 文本框；加上版本、素材和镜像标签，目前主表单共 7 个字段。筛选范围是本仓库已收录的目录，不按插件兼容性排除条目。
+
+**filter 规则：** 按插件 ID、插件名称或 `source/id` 做不区分大小写的字面子串匹配；多个词用英文逗号、中文逗号或空白分隔，不使用正则或通配符。
+
+| filter 示例 | 选择结果 |
+| --- | --- |
+| 留空 | 该仓库全部已收录插件 |
+| `theme` | ID、名称或选择键包含 `theme` 的插件 |
+| `theme-night,unequip` | 匹配任意一个词的插件（并集） |
+| `!duel` | 全部插件中排除包含 `duel` 的项 |
+| `theme,unequip,!night` | 包含 `theme` 或 `unequip`，再排除包含 `night` 的项 |
+| `夜间` | 名称包含“夜间”的插件，也支持中文关键词 |
+
+排除条件始终优先，与书写顺序无关。重复匹配只添加一次。未勾选仓库时忽略其 filter；勾选后没有任何匹配项会在下载前报错，请修改 filter 或取消勾选。单独的 `!` 是无效条件。
 
 **收录不做兼容性筛选。** 每次手动构建拉取来源 `ref`（当前均为 `main`）的最新提交，只解析一次，再将相同的源码、插件和素材交给 amd64 / arm64。Forge 从该提交的 `mods/index.json` 获取所选包的新版本、路径和 SHA-256；乐勒砳读取最新插件目录。已有插件更新无需改 Action，新出现的插件需要刷新目录并合并生成的工作流。
 
