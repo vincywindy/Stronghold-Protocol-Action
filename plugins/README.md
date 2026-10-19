@@ -1,10 +1,12 @@
 # 插件目录
 
-由 `plugins/catalog.json` 生成。所有检索到的条目均可勾选，不按兼容性筛选。名称使用「仓库名 + 插件名」。
+由 `plugins/catalog.json` 生成。所有检索到的条目均可选择，不按兼容性筛选。名称使用「仓库名 + 插件名」。
+
+在 Actions 的 **Build and publish Docker image** → **Run workflow** 中，插件 1–21 的每个下拉框均包含全部仓库的插件，可自由混选。默认均为“不添加插件”，重复选择自动去重。超过 21 项或批量选择可在 `plugins` 填入下表的选择键（逗号分隔），与下拉框选择合并。
 
 表中版本是检索快照；手动构建会获取来源 ref 的最新提交，并从该提交获取所选包的最新版本。实际版本和完整 SHA 见镜像 `/app/plugin-build.json`。
 
-未勾选不添加；安装成功后仍需房主/玩家在游戏中开启。导入失败或仅部分导入不会阻止打包，原包始终保存在 `/app/plugin-sources/`。下载失败、校验失败或游戏无法启动仍会使构建失败。
+未选择不添加；安装成功后仍需房主/玩家在游戏中开启。导入失败或仅部分导入不会阻止打包，原包始终保存在 `/app/plugin-sources/`。下载失败、校验失败或游戏无法启动仍会使构建失败。
 
 | 选择键 | 显示名称 | 快照版本 | 接入方式 |
 | --- | --- | --- | --- |
@@ -52,4 +54,4 @@
 - forge: [XiaMo233M/Stronghold-Protocol-Forge-Mods](https://github.com/XiaMo233M/Stronghold-Protocol-Forge-Mods)，ref: `main`；[目录检索快照](https://github.com/XiaMo233M/Stronghold-Protocol-Forge-Mods/tree/0dc1a4fc9db9ead85bf41258046e92065bbf6e5f)。
 - lele: [llleeeqi/Stronghold-Protocol-Lele-Mods](https://github.com/llleeeqi/Stronghold-Protocol-Lele-Mods)，ref: `main`；[目录检索快照](https://github.com/llleeeqi/Stronghold-Protocol-Lele-Mods/tree/90f06d473df8b5b30022623fd818f72c9c953d77)。
 
-刷新新增插件：`node scripts/refresh-plugin-catalog.mjs`，再运行 `node scripts/generate-plugin-workflows.mjs` 并提交生成文件。GitHub 勾选框是静态配置，需要合并目录更新才会出现新条目；已有插件更新无需修改勾选框。
+刷新新增插件：`node scripts/refresh-plugin-catalog.mjs`，再运行 `node scripts/generate-plugin-workflows.mjs` 并提交生成文件。GitHub 下拉框是静态配置，需要合并目录更新才会出现新条目；已有插件更新无需修改下拉框。生成器只更新主工作流的插件输入区和本列表。

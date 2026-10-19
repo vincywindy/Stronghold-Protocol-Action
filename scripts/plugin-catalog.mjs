@@ -38,6 +38,26 @@ export function selectPlugins(input = '', catalog = readCatalog()) {
   });
 }
 export function displayName(plugin, catalog) { return `${catalog.sources[plugin.source].repository.split('/')[1]} + ${plugin.name}`; }
+// GitHub allows 25 dispatch fields; reserve four for build settings and free-form overflow.
+export const pluginSlots = Array.from({ length: 21 }, (_, i) => `plugin_${String(i + 1).padStart(2, '0')}`);
+export const noPlugin = '不添加插件';
+export function pluginOption(plugin, catalog) { return `${displayName(plugin, catalog)} [${plugin.source}/${plugin.id}]`; }
+export function selectBuildPlugins(env, catalog = readCatalog()) {
+  const keys = [env.SELECTED_PLUGINS || ''];
+  // Polling can itself originate from workflow_dispatch; only human builds consume dropdowns.
+  if (env.GITHUB_EVENT_NAME === 'workflow_dispatch' && env.AUTOMATED_BUILD !== 'true') {
+    const inputs = JSON.parse(env.WORKFLOW_INPUTS || '{}');
+    if (!inputs || typeof inputs !== 'object' || Array.isArray(inputs)) throw new Error('Invalid workflow inputs');
+    for (const slot of pluginSlots) {
+      const value = inputs[slot];
+      if (value === undefined || value === '' || value === noPlugin) continue;
+      const plugin = catalog.plugins.find(p => pluginOption(p, catalog) === value);
+      if (!plugin) throw new Error(`Unknown plugin option in ${slot}: ${value}`);
+      keys.push(`${plugin.source}/${plugin.id}`);
+    }
+  }
+  return selectPlugins(keys.join(','), catalog);
+}
 export function forgeImportStatus(report) {
   // Retrieval is the build contract. Unsupported conversion is visible without excluding the package.
   if (!report.ok || !report.wrote || !report.products?.length) return 'bundled-only';

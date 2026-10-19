@@ -62,7 +62,7 @@ your-repository/
 ```bash
 # 检索登记来源的最新目录；只看索引和 manifest，不验证玩法。
 node scripts/refresh-plugin-catalog.mjs
-# 生成分仓库的勾选工作流和插件列表；每页最多 21 项。
+# 更新主工作流的插件下拉选项和插件列表；每个选择位包含所有来源。
 node scripts/generate-plugin-workflows.mjs
 # CI 使用此命令确认生成文件没有落后。
 node scripts/generate-plugin-workflows.mjs --check
@@ -72,7 +72,7 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 
 刷新器自动发现 `mods/index.json` 中的 Forge 包，以及 `plugins/<id>/plugin.json` 形式的原生/Lele 包；其他目录布局可手工维护 `catalog.json`。来源索引条目被删除后，仍选择旧条目会明确报“无法检索”，不会生成缺少所选原包的成功镜像。
 
-已有条目每次构建都按 `ref` 获取最新内容。新增条目需要合并目录与生成工作流后才会出现在 GitHub 的静态勾选表单中。用完整 SHA 作为 `ref` 可以固定来源；本次实际提交、版本及包校验值会写入镜像清单，两个架构共用同一准备产物。
+已有条目每次构建都按 `ref` 获取最新内容。新增条目需要合并目录与生成工作流后才会出现在 GitHub 的静态下拉表单中。生成器只更新 `.github/workflows/docker.yml` 的 `BEGIN/END GENERATED PLUGIN INPUTS` 区域与插件列表，不覆盖其余构建逻辑。所有来源共同出现在主构建入口的 21 个选择位中，默认“不添加插件”，支持跨仓库混选；`plugins` 文本框用于补充选择，两者合并后去重。不要新增分仓库工作流或突破 GitHub 的 25 个输入字段上限。用完整 SHA 作为 `ref` 可以固定来源；本次实际提交、版本及包校验值会写入镜像清单，两个架构共用同一准备产物。
 
 ## PR 应包含什么
 
@@ -81,4 +81,4 @@ python3 -m unittest discover -s tests -p 'test_*.py'
 3. 说明原包在哪里、预期复制/导入到哪里，是否有宿主补丁、脚本或额外素材流程。兼容性未知可以写“未验证”，不必伪造可用证明。
 4. 附实际运行的检查结果；若验证了安装或游玩，写清版本和范围。不要把“下载打包成功”描述成“玩法验证通过”。
 
-所有插件勾选默认 `false`；轮询传入空插件集合；含插件的手动构建要求自定义 `image_tag`；任何手动镜像都不能发布 `latest` 或自动 Release/SHA 别名。这些是所有 PR 必须保持的发布规则。
+所有插件选择位默认“不添加插件”；轮询传入空插件集合；含插件的手动构建要求自定义 `image_tag`；任何手动镜像都不能发布 `latest` 或自动 Release/SHA 别名。这些是所有 PR 必须保持的发布规则。

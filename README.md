@@ -55,7 +55,7 @@ GitHub 可能排队延迟或丢弃高负载时的调度，不能保证准点执�
 
 主构建入口留空 `upstream_ref` 时使用 `UPSTREAM_REF`；填 `latest` 选择最新正式 Release。`include_assets` 覆盖 `FETCH_ASSETS`，默认勾选。手动构建始终重建；`image_tag` 指定独立标签，未选插件且留空时生成 `manual-<run_id>-<attempt>`（精简版追加 `-lite`）。**选择任意插件后必须填写 `image_tag`**，否则在下载前失败。显式标签按输入原样使用，精简版也不自动追加后缀。`UPSTREAM_REF=latest` 跟踪正式 Release；轮询分支 / SHA 时只检查对应 SHA 标签。
 
-### 勾选插件构建
+### 选择插件构建（统一入口，可跨仓库混用）
 
 目前已收录以下插件仓库：
 
@@ -64,13 +64,13 @@ GitHub 可能排队延迟或丢弃高负载时的调度，不能保证准点执�
 | Forge 工坊包 | [XiaMo233M/Stronghold-Protocol-Forge-Mods](https://github.com/XiaMo233M/Stronghold-Protocol-Forge-Mods) | `forge/` |
 | 乐勒砳插件 | [llleeeqi/Stronghold-Protocol-Lele-Mods](https://github.com/llleeeqi/Stronghold-Protocol-Lele-Mods) | `lele/` |
 
-1. 打开 Actions 中的 **Plugins - Stronghold-Protocol-Forge-Mods (1)** / **(2)** 或 **Plugins - Stronghold-Protocol-Lele-Mods (1)**。
-2. 勾选需要的插件，名称为 **仓库名 + 插件名**，默认全部不勾选。当前目录包含 Forge 30 项、乐勒砳 8 项，完整列表见 [插件目录](plugins/README.md)。
+1. 打开 Actions 中的 **Build and publish Docker image**，点击 **Run workflow**。原来的分仓库插件工作流已合并到此入口。
+2. 在 **插件 1–21** 的下拉框中选择插件。**每个下拉框都包含所有仓库的插件，可以自由混选**，名称为 **仓库名 + 插件名 [选择键]**，默认均为“不添加插件”。当前目录包含 Forge 30 项、乐勒砳 8 项，完整列表见 [插件目录](plugins/README.md)。
 3. 填写 `image_tag`，例如 `friends-031`，并选择游戏版本与是否包含素材。
-4. 跨页/跨仓库组合可在 `additional_plugins` 填入选择键，例如 `forge/theme-night,lele/lele-rounds`。主构建入口也可直接在 `plugins` 输入同样的选择键。
+4. 例如在“插件 1”选择 Forge 的夜间主题，在“插件 2”选择乐勒砳的回合插件，即可一起打包。超过 21 项或批量选择时，在 `plugins` 填入逗号分隔的选择键，例如 `forge/theme-night,lele/lele-rounds`；该字段与下拉框选择合并，重复项自动去重。无需填满所有下拉框。
 5. 等待两个架构验证后发布；部署时将 Compose 的 `image` 改为该自定义标签。
 
-GitHub 每个手动工作流最多 25 个输入项，因此勾选入口按来源分页，每页最多 21 个插件。页面由目录自动生成，不需要为每个插件手写构建逻辑。参考 [GitHub workflow_dispatch 文档](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onworkflow_dispatchinputs)。
+GitHub 每个手动工作流最多 25 个输入项，且下拉框只能单选，因此统一表单采用 21 个插件选择位，加上版本、素材、镜像标签和补充插件 4 个字段。全部插件都能从每个选择位中找到，无需切换工作流；`plugins` 字段可补充任意数量的已收录插件。下拉选项由目录自动生成。参考 [GitHub workflow_dispatch 文档](https://docs.github.com/en/actions/reference/workflows-and-actions/workflow-syntax#onworkflow_dispatchinputs)。
 
 **收录不做兼容性筛选。** 每次手动构建拉取来源 `ref`（当前均为 `main`）的最新提交，只解析一次，再将相同的源码、插件和素材交给 amd64 / arm64。Forge 从该提交的 `mods/index.json` 获取所选包的新版本、路径和 SHA-256；乐勒砳读取最新插件目录。已有插件更新无需改 Action，新出现的插件需要刷新目录并合并生成的工作流。
 
@@ -78,7 +78,7 @@ GitHub 每个手动工作流最多 25 个输入项，因此勾选入口按来源
 
 镜像中的 `/app/plugin-build.json` 记录选择键、实际版本、来源提交、原包路径及处理状态：`copied` 已复制、`imported` 已导入、`partial` 部分导入、`bundled-only` 仅保留原包。构建摘要和 `plugin-reports` 附件保存相同记录及导入诊断。乐勒砳全素材构建会额外尝试作者的素材生成流程；无法获取的插件素材记入诊断。精简版不主动下载游戏/扩展素材，但第三方原包自带的素材仍保留。
 
-**标签隔离：** 手动构建只发布一个独立标签，不发布共享的上游 SHA 或 Release 别名，也不覆盖 `latest` / `latest-lite`。`latest`、`latest-*`、`sha-*` 和 `v0.3.1` / `0.3.1-lite` 这类版本标签不能用作自定义标签。轮询永远传入空插件列表，不会继承上一次手动勾选。插件镜像同样可同步到 Docker Hub，使用相同独立标签。
+**标签隔离：** 手动构建只发布一个独立标签，不发布共享的上游 SHA 或 Release 别名，也不覆盖 `latest` / `latest-lite`。`latest`、`latest-*`、`sha-*` 和 `v0.3.1` / `0.3.1-lite` 这类版本标签不能用作自定义标签。轮询永远传入空插件列表，不会继承上一次手动选择。插件镜像同样可同步到 Docker Hub，使用相同独立标签。
 
 ### 插件开发者与目录维护
 

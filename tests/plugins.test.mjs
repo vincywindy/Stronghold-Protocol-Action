@@ -3,12 +3,13 @@ import test from 'node:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { readCatalog, validateCatalog, selectPlugins, forgeImportStatus, copyTree } from '../scripts/plugin-catalog.mjs';
+import { readCatalog, validateCatalog, selectPlugins, selectBuildPlugins, pluginSlots, noPlugin, pluginOption, forgeImportStatus, copyTree } from '../scripts/plugin-catalog.mjs';
+import { spawnSync } from 'node:child_process';
 import { generatedFiles } from '../scripts/generate-plugin-workflows.mjs';
 import { resolveForgeEntry } from '../scripts/prepare-plugins.mjs';
 import { refreshCatalog } from '../scripts/refresh-plugin-catalog.mjs';
 
-test('catalog resolves only explicitly selected plugins and deduplicates cross-page inputs', () => {
+test('catalog resolves only explicitly selected plugins and deduplicates cross-repository inputs', () => {
   assert.deepEqual(selectPlugins(''), []);
   assert.deepEqual(selectPlugins('forge/theme-night, lele/lele-rounds\nforge/theme-night').map(p => p.id), ['theme-night', 'lele-rounds']);
   assert.throws(() => selectPlugins('forge/no-such-plugin'), /Unknown plugin/);
@@ -64,19 +65,59 @@ test('discovery retains all published entries without a compatibility filter and
   await assert.rejects(refreshCatalog(catalog, async () => { throw new Error('network failure'); }), /network failure/);
 });
 
-test('checkbox generation paginates under GitHub limit and every plugin defaults off', () => {
-  const catalog = readCatalog(), files = generatedFiles(catalog);
-  for (const [name, body] of files) {
-    if (!name.endsWith('.yml')) continue;
-    const bools = [...body.matchAll(/type: boolean\n        default: (\w+)/g)].map(m => m[1]);
-    assert.equal(bools[0], 'true'); // Asset option; every remaining boolean is a plugin.
-    assert.ok(bools.slice(1).every(v => v === 'false'));
-    assert.ok([...body.split('\npermissions:')[0].matchAll(/^      [a-z_]+[a-z0-9_]*:/gm)].length <= 25);
-    assert.ok(!body.includes('automatic: true'));
+test('one build form contains every repository in every slot and stays within 25 inputs as catalog grows', () => {
+  const catalog = readCatalog();
+  catalog.plugins.push({ ...catalog.plugins[0], id: 'future-plugin', name: "Author's future plugin" });
+  const files = generatedFiles(catalog);
+  assert.deepEqual([...files.keys()].filter(p => p.endsWith('.yml')), ['.github/workflows/docker.yml']);
+  const body = files.get('.github/workflows/docker.yml');
+  const dispatch = body.split('  workflow_dispatch:\n')[1].split('  workflow_call:')[0];
+  assert.equal([...dispatch.matchAll(/^      \w+:/gm)].length, 25);
+  for (const slot of pluginSlots) {
+    const field = dispatch.split(`      ${slot}:\n`)[1].split(/^      \w+:/m)[0];
+    assert.ok(field.includes(`default: '${noPlugin}'`));
+    for (const plugin of catalog.plugins) assert.ok(field.includes(pluginOption(plugin, catalog).replaceAll("'", "''")));
   }
-  const prototype = catalog.plugins.find(p => p.source === 'forge');
-  catalog.plugins = Array.from({ length: 43 }, (_, n) => ({ ...prototype, id: `demo-${n}` }));
-  assert.equal([...generatedFiles(catalog).keys()].filter(p => p.endsWith('.yml')).length, 3);
+  assert.equal(generatedFiles(catalog, body).get('.github/workflows/docker.yml'), body);
+  const original = fs.readFileSync('.github/workflows/docker.yml', 'utf8').replaceAll('\r\n', '\n');
+  assert.equal(body.split('      # END GENERATED PLUGIN INPUTS')[1], original.split('      # END GENERATED PLUGIN INPUTS')[1]);
+});
+
+test('unified selection mixes repositories, merges overflow, deduplicates and defaults empty', () => {
+  const catalog = readCatalog();
+  const option = key => pluginOption(selectPlugins(key, catalog)[0], catalog);
+  const env = { GITHUB_EVENT_NAME: 'workflow_dispatch', WORKFLOW_INPUTS: JSON.stringify({
+    plugin_01: option('forge/theme-night'), plugin_02: option('lele/lele-rounds'),
+    plugin_03: option('forge/theme-night'), plugin_04: noPlugin,
+  }), SELECTED_PLUGINS: 'forge/unequip,lele/lele-rounds' };
+  assert.deepEqual(selectBuildPlugins(env).map(p => `${p.source}/${p.id}`), ['forge/theme-night', 'forge/unequip', 'lele/lele-rounds']);
+  assert.deepEqual(selectBuildPlugins({ GITHUB_EVENT_NAME: 'workflow_dispatch', WORKFLOW_INPUTS: JSON.stringify(Object.fromEntries(pluginSlots.map(s => [s, noPlugin]))) }), []);
+  assert.deepEqual(selectBuildPlugins({ ...env, SELECTED_PLUGINS: '', AUTOMATED_BUILD: 'true' }), []);
+  assert.deepEqual(selectBuildPlugins({ ...env, SELECTED_PLUGINS: '', GITHUB_EVENT_NAME: 'push' }), []);
+  assert.throws(() => selectBuildPlugins({ ...env, WORKFLOW_INPUTS: '{' }));
+  assert.throws(() => selectBuildPlugins({ ...env, WORKFLOW_INPUTS: '{"plugin_01":"unknown"}' }), /Unknown plugin option/);
+  // Free-form input keeps arbitrary-size mixes possible beyond the 21 dropdown slots.
+  assert.equal(selectBuildPlugins({ SELECTED_PLUGINS: catalog.plugins.map(p => `${p.source}/${p.id}`).join(',') }).length, catalog.plugins.length);
+});
+
+test('dropdown-only plugin builds enforce explicit isolated tags before producing selection output', () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'sp-plugin-input-test-'));
+  try {
+    const output = path.join(dir, 'output');
+    const env = { ...process.env, GITHUB_OUTPUT: output, GITHUB_REPOSITORY: 'example/build', FETCH_ASSETS: '1',
+      GITHUB_EVENT_NAME: 'workflow_dispatch', AUTOMATED_BUILD: 'false', SELECTED_PLUGINS: '',
+      GITHUB_REF: 'refs/heads/main', DEFAULT_BRANCH: 'main',
+      WORKFLOW_INPUTS: JSON.stringify({ plugin_01: pluginOption(selectPlugins('lele/lele-rounds')[0], readCatalog()) }) };
+    for (const tag of ['', 'latest', 'latest-lite', 'sha-test', 'v1.2.3']) {
+      const result = spawnSync(process.execPath, ['scripts/validate-plugin-inputs.mjs'], { env: { ...env, IMAGE_TAG: tag }, encoding: 'utf8' });
+      assert.notEqual(result.status, 0, tag);
+      assert.match(result.stderr, /explicit image_tag|Invalid image_tag/);
+      assert.ok(!fs.existsSync(output));
+    }
+    const result = spawnSync(process.execPath, ['scripts/validate-plugin-inputs.mjs'], { env: { ...env, IMAGE_TAG: 'friends' }, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+    assert.equal(fs.readFileSync(output, 'utf8'), 'selection=lele/lele-rounds\n');
+  } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 
 test('plugin copy rejects filesystem links instead of importing outside files', () => {
