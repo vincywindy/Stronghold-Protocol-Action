@@ -1,0 +1,51 @@
+name: Check upstream updates
+
+on:
+  schedule:
+    # Avoid the busy top of the hour; finish each poll instead of holding an idle runner.
+    - cron: '17 */6 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: check-upstream-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  check:
+    if: github.ref == format('refs/heads/{0}', github.event.repository.default_branch)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      packages: read
+      actions: write
+    env:
+      UPSTREAM_REPOSITORY: sganggs/Stronghold-Protocol
+      REQUESTED_REF: ${{ vars.UPSTREAM_REF || 'latest' }}
+      FETCH_ASSETS: ${{ vars.FETCH_ASSETS || '1' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check upstream and registry manifests
+        id: check
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+          DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
+          DOCKERHUB_REPOSITORY: ${{ vars.DOCKERHUB_REPOSITORY }}
+        run: node scripts/check-upstream.mjs
+      - name: Start publication only when needed
+        if: steps.check.outputs.publish_needed == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        # Dispatch permits a separate build history; automatic builds recheck state after queuing.
+        run: |
+          gh workflow run docker.yml --repo "$GITHUB_REPOSITORY" --ref "$DEFAULT_BRANCH" \
+            -f upstream_ref="$REQUESTED_REF" \
+            -f include_assets="$([[ "$FETCH_ASSETS" == '1' ]] && echo true || echo false)" \
+            -f check_published=true

@@ -18,16 +18,18 @@ export function imageMetadata(env) {
     throw new Error('Invalid release tag');
   }
   const versionTag = release ? `${release}${suffix}` : '';
+  // Unreleased refs are deduplicated by resolved commit without creating a release/latest tag.
+  const checkTag = versionTag || `sha-${sha}${suffix}`;
   const latestTag = `latest${suffix}`;
   if (versionTag) tags.push(`${image}:${versionTag}`);
   // Only the current stable release may advance latest; branches and old releases cannot.
   if (release && env.IS_LATEST_RELEASE === 'true') tags.push(`${image}:${latestTag}`);
-  return { image, publish, tags, versionTag, latestTag, version: release || sha };
+  return { image, publish, tags, versionTag, checkTag, latestTag, version: release || sha };
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const result = imageMetadata(process.env);
   appendFileSync(process.env.GITHUB_OUTPUT,
-    `image=${result.image}\npublish=${result.publish}\nversion_tag=${result.versionTag}\nlatest_tag=${result.latestTag}\nversion=${result.version}\ntags<<IMAGE_TAGS\n${result.tags.join('\n')}\nIMAGE_TAGS\n`);
+    `image=${result.image}\npublish=${result.publish}\nversion_tag=${result.versionTag}\ncheck_tag=${result.checkTag}\nlatest_tag=${result.latestTag}\nversion=${result.version}\ntags<<IMAGE_TAGS\n${result.tags.join('\n')}\nIMAGE_TAGS\n`);
   console.log(JSON.stringify(result, null, 2));
 }

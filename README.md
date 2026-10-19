@@ -27,17 +27,21 @@ ghcr.io/<你的 GitHub 用户名或组织>/<本仓库名>:latest
 | 事件 | 行为 |
 | --- | --- |
 | 默认分支推送构建相关文件 | 构建、验证两个架构并发布 |
-| 每小时定时任务 | 每小时整点检查最新正式 Release；镜像版本未发布或发布不完整时构建，否则跳过 |
+| 每 6 小时独立检查 | `Check upstream updates` 只查询上游与镜像清单；有新版本或发布不完整时才触发构建 / 补同步 |
 | 手动运行 | 重新构建；可指定上游 Release、分支、Tag 或完整提交 SHA，选择是否下载素材 |
 | Pull Request | 在原生 amd64 / arm64 runner 上构建并验证精简镜像，不登录、不发布 |
 | 非默认分支推送 | 仅检查工作流、标签规则和 Compose 配置 |
 | 在非默认分支手动运行 | 构建验证，但不发布 |
 
-定时任务使用 cron `0 * * * *`，每小时整点检查一次，只在默认分支运行。GitHub 可能排队延迟或丢弃高负载时的调度，不能保证准点执行；上游发布 Release 不会直接触发本仓库，通常在下一次每小时检查时跟进。公开仓库长期无活动时 GitHub 可能停用定时任务，可在 Actions 页面重新启用。参见 [GitHub 定时事件说明](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)。
+独立检查工作流位于 `.github/workflows/check-upstream.yml`，使用 cron `17 */6 * * *`，只在默认分支运行。计划时间为 UTC 00:17、06:17、12:17、18:17，即北京时间每天 **02:17、08:17、14:17、20:17**，避开整点高峰。每次检查完成立即退出，超时上限 5 分钟，不驻留等待；无变化时不启动 `Build and publish Docker image`。因此检查每天约 4 条记录，构建历史只保留实际触发的发布以及原有推送、PR、手动运行。也可在 Actions → **Check upstream updates → Run workflow** 手动检查。
 
-每小时检查通过 GitHub 的 latest Release API 获取正式版本，从其 Git Tag 检出代码，保持应用代码、镜像版本标签和镜像 `org.opencontainers.image.version` 一致。仅当该版本标签与 `latest` 指向同一个包含 amd64 / arm64 的镜像时，才跳过构建；含素材版本还会检查已经包含 Release 本地素材的标记，旧的无 3D 素材镜像会自动补建。检查失败会报错，不会当成“没有更新”。精简镜像独立检查带 `-lite` 的标签。固定历史 Release 时只检查该版本，不覆盖当前 `latest`。
+检查阶段只检出本仓库脚本，通过 API 查询上游版本、提交与 GHCR / Docker Hub 镜像清单，不运行测试、不下载上游源码或素材、不安装镜像复制工具。需要发布时，通过本仓库 `GITHUB_TOKEN` 的 `actions: write` 权限触发 `docker.yml`，无需额外 PAT；检查任务的 GHCR 权限仅为 `packages: read`。自动触发的发布会在排队后再次检查 GHCR，避免重复构建，并重新解析当前跟踪版本，避免过期检查结果覆盖较新的 `latest`。
 
-版本未变且镜像已完整发布时不会每小时刷新基础镜像或素材；需要重建相同版本时，手动点击 **Run workflow** 即可。推送构建相关文件也会重新构建。若上游移动了同名 Tag，须手动重建以同步变化。
+GitHub 可能排队延迟或丢弃高负载时的调度，不能保证准点执行；上游发布 Release 不会直接触发本仓库，通常在下一次六小时检查时跟进。公开仓库长期无活动时 GitHub 可能停用定时任务，可在 Actions 页面重新启用。参见 [GitHub 定时事件说明](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)。
+
+定时检查通过 GitHub 的 latest Release API 获取正式版本，实际构建从其 Git Tag 检出代码，保持应用代码、镜像版本标签和镜像 `org.opencontainers.image.version` 一致。仅当该版本标签与 `latest` 指向同一个包含 amd64 / arm64 的镜像时，才跳过构建；含素材版本还会检查已经包含 Release 本地素材的标记，旧的无 3D 素材镜像会自动补建。检查失败会报错，不会当成“没有更新”。精简镜像独立检查带 `-lite` 的标签。固定历史 Release 时只检查该版本，不覆盖当前 `latest`。
+
+版本未变且镜像已完整发布时不会定时刷新基础镜像或素材；需要重建相同版本时，在 **Build and publish Docker image** 手动点击 **Run workflow**，保持 `check_published` 未勾选即可。推送构建相关文件也会重新构建。若上游移动了同名 Release Tag，须手动重建以同步变化。
 
 ### 可选配置
 
@@ -49,7 +53,7 @@ ghcr.io/<你的 GitHub 用户名或组织>/<本仓库名>:latest
 | `FETCH_ASSETS` | `1` | 是否包含素材；正式 Release 直接使用同版本完整包的全部素材、字体和清单；`0` 为精简镜像，只接受 `0` 或 `1` |
 | `NODE_IMAGE` | `node:22-alpine` | Node 基础镜像，必须支持两个架构且兼容上游依赖 |
 
-手动运行时，留空 `upstream_ref` 使用 `UPSTREAM_REF`；填 `latest` 可显式选择最新正式 Release。`include_assets` 复选框覆盖 `FETCH_ASSETS`，默认勾选。若以前设置过 `UPSTREAM_REF=master`，请删除该变量或改为 `latest` 才会启用 Release 跟踪。选择未关联正式 Release 的分支 / SHA 时，定时任务仍会每小时构建，但不会更新版本标签或 `latest`。
+手动运行时，留空 `upstream_ref` 使用 `UPSTREAM_REF`；填 `latest` 可显式选择最新正式 Release。`include_assets` 复选框覆盖 `FETCH_ASSETS`，默认勾选。`check_published` 默认不勾选，手动运行仍强制重建；独立检查自动触发发布时会勾选它，并传入 `FETCH_ASSETS` 对应的素材选项。若以前设置过 `UPSTREAM_REF=master`，请删除该变量或改为 `latest` 才会启用 Release 跟踪。选择未关联正式 Release 的分支 / SHA 时，每 6 小时检查对应提交的 SHA 镜像标签，缺失或不完整才构建，不更新 Release 版本标签或 `latest`。
 
 ### 可选推送到 Docker Hub
 
@@ -64,9 +68,9 @@ ghcr.io/<你的 GitHub 用户名或组织>/<本仓库名>:latest
 
 默认镜像地址是 `docker.io/<DOCKERHUB_USERNAME>/<本 GitHub 仓库名的小写形式>`。若要指定仓库或组织，在 **Variables** 中添加 `DOCKERHUB_REPOSITORY`，例如 `your-name/stronghold-protocol` 或 `your-org/stronghold-protocol`，必须全小写，不含 `docker.io/`、标签或协议。提前在 Docker Hub 创建对应仓库并设置 Public / Private；用于登录的用户及 Token 需要该仓库的推送权限。
 
-配置完成后，在默认分支手动 **Run workflow**，或等待每小时定时任务。Docker Hub 使用与 GHCR 相同的 Release、`latest` 和 SHA 标签（精简版同样带 `-lite`），同步两个架构及构建证明，不重复构建。每小时任务即使跳过 GHCR 构建，也会补齐 Docker Hub 缺失或不同的标签，已经一致则不重复推送。
+配置完成后，在默认分支手动 **Run workflow**，或等待每 6 小时的独立检查。Docker Hub 使用与 GHCR 相同的 Release、`latest` 和 SHA 标签（精简版同样带 `-lite`），同步两个架构及构建证明，不重复构建。独立检查会比对这些标签的 manifest digest：已经一致则直接退出；缺失或不同时触发发布工作流，跳过已完整发布的 GHCR 构建，仅补齐 Docker Hub 镜像。
 
-同步通过 [Skopeo](https://github.com/containers/skopeo/blob/main/docs/skopeo-copy.1.md) 复制完整多架构镜像并校验 digest。凭据已配置但无效、权限不足或同步失败时，Docker Hub 任务会报错，已经发布成功的 GHCR 镜像仍可使用；修正配置后可重新运行任务或等待下一次定时同步。删除任一 Secret 即可停用 Docker Hub 推送。
+同步通过 [Skopeo](https://github.com/containers/skopeo/blob/main/docs/skopeo-copy.1.md) 复制完整多架构镜像并校验 digest。凭据已配置但无效、权限不足或同步失败时，检查或 Docker Hub 同步任务会报错，已经发布成功的 GHCR 镜像仍可使用；修正配置后可重新运行任务或等待下一次定时检查。删除任一 Secret 即可停用 Docker Hub 推送。
 
 使用 Docker Hub 部署时，只需将 Compose 的 `image` 改为实际地址，例如 `your-name/stronghold-protocol:latest`；私有仓库需先在部署主机执行 `docker login`。发布结果可在 Docker Hub 对应仓库的 **Tags** 页面及 Actions 运行摘要查看。
 

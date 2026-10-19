@@ -18,9 +18,6 @@ on:
       - 'tests/**'
       - 'compose.yaml'
       - '.env.example'
-  schedule:
-    # Poll hourly; the release publication check skips builds already completed.
-    - cron: '0 * * * *'
   workflow_dispatch:
     inputs:
       upstream_ref:
@@ -31,6 +28,10 @@ on:
         description: 'Include public art/audio and same-release local art (including 3D board)'
         type: boolean
         default: true
+      check_published:
+        description: 'Skip an already published image (used by the upstream checker); leave unchecked to force rebuild'
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -78,7 +79,7 @@ jobs:
       - name: Validate workflow syntax
         run: |
           docker run --rm -v "$PWD:/repo" -w /repo \
-            rhysd/actionlint:1.7.12 -color .github/workflows/docker.yml
+            rhysd/actionlint:1.7.12 -color .github/workflows/*.yml
       - name: Validate Compose configuration
         env:
           IMAGE: ghcr.io/example/stronghold-protocol-action:latest
@@ -113,7 +114,8 @@ jobs:
       - name: Check whether this Release is already published
         id: check
         env:
-          VERSION_TAG: ${{ steps.metadata.outputs.version_tag }}
+          CHECK_PUBLISHED: ${{ github.event_name == 'workflow_dispatch' && inputs.check_published }}
+          VERSION_TAG: ${{ steps.metadata.outputs.check_tag }}
           LATEST_TAG: ${{ steps.upstream.outputs.is_latest == 'true' && steps.metadata.outputs.latest_tag || '' }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REQUIRE_LOCAL_ASSETS: ${{ steps.upstream.outputs.release_tag != '' && env.FETCH_ASSETS == '1' && '1' || '0' }}
@@ -323,7 +325,7 @@ jobs:
   dockerhub:
     name: Optional Docker Hub mirror
     needs: [validate, publish]
-    # A scheduled GHCR cache hit still needs a mirror check (new credentials or a failed prior copy).
+    # A dispatched GHCR cache hit still needs a mirror check (new credentials or a failed prior copy).
     if: >-
       !cancelled() && needs.validate.result == 'success' && needs.validate.outputs.publish == 'true' &&
       (needs.publish.result == 'success' || (needs.validate.outputs.build == 'false' && needs.publish.result == 'skipped'))

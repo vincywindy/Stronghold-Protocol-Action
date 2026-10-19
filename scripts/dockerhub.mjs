@@ -14,6 +14,32 @@ export function dockerhubConfig(env) {
   return { enabled: true, repository };
 }
 
+export async function dockerhubAlreadySynced({ repository, username, token, tags, sourceDigest }, request = fetch) {
+  const auth = await request(`https://auth.docker.io/token?service=registry.docker.io&scope=repository:${repository}:pull`, {
+    headers: { Authorization: `Basic ${Buffer.from(`${username}:${token}`).toString('base64')}` },
+    signal: AbortSignal.timeout(30000),
+  });
+  if (!auth.ok) throw new Error(`Docker Hub authentication failed: HTTP ${auth.status}`);
+  const credentials = await auth.json();
+  const accessToken = credentials.token || credentials.access_token;
+  if (!accessToken) throw new Error('Docker Hub returned no access token');
+  for (const tag of tags) {
+    // Probe only manifests, including SHA aliases, so a partial previous copy is retried without downloading layers.
+    const response = await request(`https://registry-1.docker.io/v2/${repository}/manifests/${encodeURIComponent(tag)}`, {
+      method: 'HEAD',
+      headers: { Authorization: `Bearer ${accessToken}`,
+        Accept: 'application/vnd.oci.image.index.v1+json, application/vnd.docker.distribution.manifest.list.v2+json' },
+      signal: AbortSignal.timeout(30000),
+    });
+    if (response.status === 404) return false;
+    if (!response.ok) throw new Error(`Docker Hub manifest lookup failed: HTTP ${response.status}`);
+    const current = response.headers.get('docker-content-digest');
+    if (!current) throw new Error('Docker Hub returned no manifest digest');
+    if (current !== sourceDigest) return false;
+  }
+  return true;
+}
+
 // Capture stderr so an expected missing-tag probe cannot print Skopeo's misleading "fatal" log.
 // Unexpected failures still propagate with the captured stderr attached to the error.
 const skopeo = (args) => execFileSync('skopeo', args, {

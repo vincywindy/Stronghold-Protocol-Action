@@ -1,7 +1,7 @@
 import { appendFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-export async function releaseAlreadyPublished({ repository, versionTag, latestTag, username, token, requireLocalAssets = false }, request = fetch) {
+export async function publishedReleaseDigest({ repository, versionTag, latestTag, username, token, requireLocalAssets = false }, request = fetch) {
   if (!/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/.test(repository)) throw new Error('Invalid image repository');
   const headers = token ? { Authorization: `Basic ${Buffer.from(`${username}:${token}`).toString('base64')}` } : {};
   const auth = await request(`https://ghcr.io/token?service=ghcr.io&scope=repository:${repository}:pull`, {
@@ -29,14 +29,19 @@ export async function releaseAlreadyPublished({ repository, versionTag, latestTa
     return digest && platforms.has('amd64') && platforms.has('arm64') ? digest : null;
   }
   const versionDigest = await manifest(versionTag);
-  if (!versionDigest) return false;
+  if (!versionDigest) return null;
   // Repair incomplete publication too: a version tag alone does not prove latest was updated.
-  return !latestTag || versionDigest === await manifest(latestTag);
+  return !latestTag || versionDigest === await manifest(latestTag) ? versionDigest : null;
+}
+
+export async function releaseAlreadyPublished(options, request = fetch) {
+  return Boolean(await publishedReleaseDigest(options, request));
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   let build = true;
-  if (process.env.GITHUB_EVENT_NAME === 'schedule' && process.env.VERSION_TAG) {
+  // Automatic dispatches recheck after queuing; a preceding publisher may have finished meanwhile.
+  if (process.env.CHECK_PUBLISHED === 'true' && process.env.VERSION_TAG) {
     build = !await releaseAlreadyPublished({ repository: process.env.GITHUB_REPOSITORY.toLowerCase(),
       versionTag: process.env.VERSION_TAG, latestTag: process.env.LATEST_TAG,
       username: process.env.GITHUB_ACTOR, token: process.env.GHCR_TOKEN,
