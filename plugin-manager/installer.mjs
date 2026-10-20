@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import { copyTree, selectPlugins, forgeImportStatus } from '../scripts/plugin-catalog.mjs';
 import { current, generationPath, activate } from './storage.mjs';
 import { downloadPlugin } from './download.mjs';
+import { downloadHostBundle, prepareRuntime, LELE_REPOSITORY } from './lele-host.mjs';
 
 const execute = promisify(execFile);
 export function childEnvironment(env = process.env) {
@@ -23,7 +24,8 @@ export async function runImporter(app, adapter, source, output) {
     { env: childEnvironment(), timeout: 180000, maxBuffer: 16 * 1024 * 1024 });
   return JSON.parse(stdout);
 }
-export async function installSelection({ data, app, catalog, keys, update = false, download = downloadPlugin, importer = runImporter, log = () => {} }) {
+export async function installSelection({ data, app, catalog, keys, update = false, download = downloadPlugin,
+  importer = runImporter, downloadHost = downloadHostBundle, prepare = prepareRuntime, log = () => {} }) {
   if (!Array.isArray(keys) || keys.some(key => typeof key !== 'string')) throw new Error('Expected plugin key array');
   const previous = current(data), unique = [...new Set(keys)].sort();
   // A removed upstream entry may remain installed, but cannot be newly downloaded or updated.
@@ -39,6 +41,26 @@ export async function installSelection({ data, app, catalog, keys, update = fals
     owners.set(product.toLowerCase(), key);
   };
   try {
+    const lele = unique.map(key => {
+      const old = previous.installed.find(p => p.key === key);
+      if (old && !update) return old;
+      const plugin = selectPlugins(key, catalog)[0];
+      return { ...plugin, revision: catalog.sources[plugin.source].revision };
+    }).filter(p => p.adapter === 'lele');
+    let host, runtime = { dir: app };
+    if (lele.length) {
+      const revisions = [...new Set(lele.map(p => p.revision))];
+      if (revisions.length !== 1) throw new Error('Lele 插件来自不同提交，请点击“更新已选插件”统一插件与宿主补丁版本');
+      const bundle = path.join(dir, 'host-bundle');
+      if (previous.host?.revision === revisions[0]) {
+        copyTree(path.join(previous.dir, 'host-bundle'), bundle);
+        host = previous.host;
+      } else {
+        log(`下载 Lele 宿主兼容层 @ ${revisions[0].slice(0, 12)}`);
+        host = await downloadHost({ repository: LELE_REPOSITORY, revision: revisions[0] }, bundle);
+      }
+      runtime = await prepare({ dir: app }, { dir, installed: lele, host }, { log });
+    }
     for (const key of unique) {
       const old = previous.installed.find(item => item.key === key);
       const payload = path.join(dir, 'packages', ...key.split('/'));
@@ -48,7 +70,16 @@ export async function installSelection({ data, app, catalog, keys, update = fals
           copyTree(path.join(previous.dir, 'plugins', product), path.join(pluginsDir, product));
         }
         copyTree(path.join(previous.dir, 'packages', ...key.split('/')), payload);
-        installed.push(old);
+        if (old.adapter === 'lele') {
+          // Recheck legacy installs against the adapted host, replacing the old "unsupported" warning.
+          const diagnostics = [];
+          for (const product of old.products) {
+            const report = await importer(runtime.dir, old.adapter, path.join(pluginsDir, product), pluginsDir);
+            if (report.problems?.length || report.wrote === false) throw new Error(`Lele 插件检查失败：${key} ${JSON.stringify(report.problems || [])}`);
+            diagnostics.push(...(report.warnings || []));
+          }
+          installed.push({ ...old, diagnostics, hostRevision: host.revision });
+        } else installed.push(old);
         continue;
       }
       const plugin = selectPlugins(key, catalog)[0], source = catalog.sources[plugin.source];
@@ -62,7 +93,7 @@ export async function installSelection({ data, app, catalog, keys, update = fals
         fs.mkdirSync(output, { recursive: true });
         let copying = false;
         try {
-          const report = await importer(app, 'forge', downloaded, output);
+          const report = await importer(runtime.dir, 'forge', downloaded, output);
           fs.writeFileSync(path.join(payload, 'import-report.json'), JSON.stringify(report, null, 2));
           record.status = forgeImportStatus(report);
           record.diagnostics = report.issues || report.skipped || [];
@@ -84,15 +115,21 @@ export async function installSelection({ data, app, catalog, keys, update = fals
         record.products = [plugin.id];
         record.status = 'copied';
         try {
-          const report = await importer(app, plugin.adapter, target, pluginsDir);
+          const report = await importer(runtime.dir, plugin.adapter, target, pluginsDir);
+          if (plugin.adapter === 'lele' && (report.problems?.length || report.wrote === false)) {
+            throw new Error(`Lele 插件检查失败：${key} ${JSON.stringify(report.problems || [])}`);
+          }
           record.diagnostics.push(...(report.problems || []), ...(report.warnings || []));
-        } catch (error) { record.diagnostics.push(error.message); }
-        if (plugin.adapter === 'lele') record.diagnostics.push('此插件目前要求 Lele 宿主 API；管理器不修改上游源码或注入宿主补丁，纯原版可能拒绝加载。');
+        } catch (error) {
+          if (plugin.adapter === 'lele') throw error;
+          record.diagnostics.push(error.message);
+        }
+        if (plugin.adapter === 'lele') record.hostRevision = host.revision;
       }
       installed.push(record);
       log(`${key}: ${record.status}`);
     }
-    const manifest = { id, previousId: previous.id, installed, createdAt: new Date().toISOString() };
+    const manifest = { id, previousId: previous.id, installed, ...(host ? { host } : {}), createdAt: new Date().toISOString() };
     activate(data, manifest);
     return manifest;
   } catch (error) {

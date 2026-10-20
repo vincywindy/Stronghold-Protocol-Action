@@ -28,6 +28,8 @@ RUN mkdir -p packs public/assets \
        esac \
     && rm -rf .container-assets .cache
 FROM ${NODE_IMAGE} AS runtime
+# Runtime Lele compatibility uses git apply (including binary patches); no source is patched at build time.
+RUN apk add --no-cache git
 ENV NODE_ENV=production \
     HOST=0.0.0.0 \
     PORT=3000

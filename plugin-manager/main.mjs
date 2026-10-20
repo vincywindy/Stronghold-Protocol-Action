@@ -38,7 +38,7 @@ if (enabled === '0' || enabled === 'auto' && !Object.keys(bakedCatalog.sources).
   const api = {
     state() {
       const installed = current(data), activeGame = gameState(data);
-      return { sources: catalog.sources, catalog: catalog.plugins, installed: installed.installed, job, logs,
+      return { sources: catalog.sources, catalog: catalog.plugins, installed: installed.installed, host: installed.host || null, job, logs,
         game: { version: activeGame.version, origin: activeGame.origin, previousVersion: activeGame.previous?.version || null, ...supervisor.status() },
         restartRequired: installed.id !== supervisor.running?.plugins.id,
         releaseSource: process.env.GAME_UPDATE_URL || process.env.GAME_RELEASE_API || defaultReleaseApi };

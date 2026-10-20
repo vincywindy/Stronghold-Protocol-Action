@@ -209,7 +209,7 @@ test('supervisor restarts game and restores prior version when candidate crashes
   writeJson(path.join(bad, 'package.json'), { type: 'module' });
   fs.writeFileSync(path.join(bad, 'server/index.js'), `throw new Error('broken release');`);
   const port = await freePort(), supervisor = new Supervisor({ env: { ...process.env, PORT: String(port) }, log: () => {}, healthTimeout: 3000 });
-  const plugins = { id: 'plugins', dir };
+  const plugins = { id: 'plugins', dir, installed: [] };
   try {
     await supervisor.start({ dir: app, version: '1.0.0' }, plugins);
     const pid = supervisor.child.pid;

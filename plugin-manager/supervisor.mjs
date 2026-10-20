@@ -2,11 +2,12 @@ import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { childEnvironment } from './installer.mjs';
+import { prepareRuntime } from './lele-host.mjs';
 
 const pause = ms => new Promise(resolve => setTimeout(resolve, ms));
 export class Supervisor {
-  constructor({ env = process.env, log = console.log, healthTimeout = 30000 } = {}) {
-    this.env = env; this.log = log; this.healthTimeout = healthTimeout; this.child = null; this.running = null;
+  constructor({ env = process.env, log = console.log, healthTimeout = 30000, prepare = prepareRuntime } = {}) {
+    this.env = env; this.log = log; this.healthTimeout = healthTimeout; this.prepare = prepare; this.child = null; this.running = null;
   }
   async stop() {
     const child = this.child;
@@ -21,9 +22,10 @@ export class Supervisor {
     await exited;
     clearTimeout(timeout);
   }
-  async start(game, plugins) {
-    const child = spawn(process.execPath, [fileURLToPath(new URL('./game-process.mjs', import.meta.url)), game.dir, path.join(plugins.dir, 'plugins')], {
-      cwd: game.dir, env: { ...childEnvironment(this.env), SP_PLUGIN_SCRIPTS: this.env.SP_PLUGIN_SCRIPTS || 'sandbox' },
+  async start(game, plugins, runtime) {
+    runtime ||= await this.prepare(game, plugins, { log: this.log });
+    const child = spawn(process.execPath, [fileURLToPath(new URL('./game-process.mjs', import.meta.url)), runtime.dir, path.join(plugins.dir, 'plugins')], {
+      cwd: runtime.dir, env: { ...childEnvironment(this.env), SP_PLUGIN_SCRIPTS: this.env.SP_PLUGIN_SCRIPTS || 'sandbox' },
       detached: process.platform !== 'win32', stdio: ['ignore', 'pipe', 'pipe'],
     });
     this.child = child;
@@ -36,7 +38,7 @@ export class Supervisor {
       if (child.exitCode !== null || child.signalCode !== null) throw new Error(`Game exited during startup (${child.exitCode ?? child.signalCode})`);
       try {
         const response = await fetch(`http://127.0.0.1:${this.env.PORT || 3000}/healthz`, { signal: AbortSignal.timeout(1500) });
-        if (response.ok && (await response.json()).ok) { this.running = { game, plugins }; return; }
+        if (response.ok && (await response.json()).ok) { this.running = { game, plugins, runtime }; return; }
       } catch {}
       await pause(250);
     }
@@ -45,16 +47,19 @@ export class Supervisor {
   }
   async switchTo(game, plugins) {
     const before = this.running;
+    // Incompatible host patches must fail while the current game is still running.
+    const runtime = await this.prepare(game, plugins, { log: this.log });
     await this.stop();
-    try { await this.start(game, plugins); }
+    try { await this.start(game, plugins, runtime); }
     catch (error) {
       await this.stop();
       if (before) {
         this.log('启动失败，恢复上一次运行版本');
-        await this.start(before.game, before.plugins);
+        await this.start(before.game, before.plugins, before.runtime);
       }
       throw error;
     }
   }
-  status() { return { alive: Boolean(this.child?.pid && this.child.exitCode === null && this.child.signalCode === null), version: this.running?.game.version || null, pluginGeneration: this.running?.plugins.id || null }; }
+  status() { return { alive: Boolean(this.child?.pid && this.child.exitCode === null && this.child.signalCode === null), version: this.running?.game.version || null,
+    pluginGeneration: this.running?.plugins.id || null, host: this.running?.runtime?.host || null }; }
 }

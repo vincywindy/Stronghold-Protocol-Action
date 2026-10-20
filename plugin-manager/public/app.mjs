@@ -51,6 +51,7 @@ function App() {
     ${error && html`<p role="alert" class="error">${error}</p>`}
     <section><div class="section-title"><div class="section-heading"><span class="section-number" aria-hidden="true">01</span><div><h2>游戏版本 <span class="version">${state.game.version || '未知'}</span></h2><div class="section-caption">VERSION CONTROL</div></div></div></div>
       <p class="release-source"><span>更新来源</span><code>${state.releaseSource}</code></p>
+      <p class="muted">当前宿主：${state.game.host ? `Lele API ${state.game.host.api} · ${state.game.host.version} · ${state.game.host.revision.slice(0, 12)}` : '原版'}${state.host && state.restartRequired ? '；已准备 Lele 兼容层，重启后生效' : ''}</p>
       <p class="muted">优先下载增量更新包，基线不匹配时尝试精简程序包；保留现有素材和插件。更新、回退及重启会中断正在进行的对局。</p>
       <div class="actions"><button disabled=${busy} onClick=${() => action('check-update')}>检查更新</button>
       <button disabled=${busy} onClick=${() => action('update-game', {}, '下载并更新游戏？切换版本时将中断当前对局，启动失败会恢复原版本。')}>下载更新并重启</button>
@@ -67,7 +68,7 @@ function App() {
         return html`<article key=${key} class=${selected.has(key) ? 'is-selected' : ''}><label><input type="checkbox" checked=${selected.has(key)} disabled=${busy} onChange=${e => toggle(key, e.target.checked)}/><span><strong>${state.sources[p.source]?.repository.split('/')[1] || p.source} + ${label(p)}</strong><small>${key} · 目录版本 ${p.version}${have ? ` · 已下载 ${have.version}` : ''}</small></span></label>
           <span class=${have?.status === 'bundled-only' || have?.status === 'partial' ? 'badge warn' : have ? 'badge installed' : 'badge'}>${have ? names[have.status] || have.status : '未安装'}</span>
           ${have && (have.version !== p.version || have.revision !== state.sources[p.source]?.revision) && html`<small>来源有更新，可重新下载</small>`}
-          ${p.adapter === 'lele' && html`<small class="muted">需要 Lele 宿主适配时，纯原版可能无法加载；管理器不会注入宿主补丁。</small>`}
+          ${p.adapter === 'lele' && html`<small class="muted">安装时自动准备同版本 Lele 宿主补丁，重启后生效。补丁修改独立运行副本，游戏更新须通过兼容检查。</small>`}
           ${have?.diagnostics?.length > 0 && html`<details><summary>安装诊断</summary><pre>${JSON.stringify(have.diagnostics, null, 2)}</pre></details>`}
         </article>`;
       })}</div>

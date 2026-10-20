@@ -22,7 +22,7 @@ export function generatedFiles(catalog = readCatalog(), workflow = fs.readFileSy
   const lines = ['# 插件目录', '', '由 `plugins/catalog.json` 生成。所有检索到的条目均可选择，不按兼容性筛选。名称使用「仓库名 + 插件名」。', '',
     '构建时勾选仓库只启用管理来源，不安装其中的插件。启动后打开管理网页，在列表中选择需要的插件，再点击“应用选择”；支持跨仓库组合、更新和卸载。', '',
     '表中版本是构建目录快照。管理网页的“刷新目录”会重新检索来源 ref，下载固定到这次检索的完整提交 SHA；不按兼容性隐藏条目。安装结果和诊断保存在持久化卷中。', '',
-    '安装与房间启用分开。Forge 导入失败时保留原包及诊断；Lele/native 复制到游戏插件目录，但不注入宿主补丁。脚本默认按 sandbox 运行，trusted 插件不会自动获得信任。', '',
+    '安装与房间启用分开。Forge 导入失败时保留原包及诊断；Lele 自动准备同提交的宿主补丁，在独立游戏副本中检查并运行；native 直接复制到插件目录。脚本默认按 sandbox 运行，Lele 宿主适配不是沙盒脚本，trusted 插件不会自动获得信任。', '',
     '| 选择键 | 显示名称 | 快照版本 | 接入方式 |', '| --- | --- | --- | --- |'];
   for (const p of catalog.plugins) lines.push(`| \`${p.source}/${p.id}\` | ${displayName(p, catalog)} | ${p.version} | ${p.adapter} |`);
   lines.push('', '## 跟踪来源', '');
