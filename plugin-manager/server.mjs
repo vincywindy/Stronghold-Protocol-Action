@@ -21,6 +21,10 @@ export function createManagerServer({ api, image, password = '', allowedHosts = 
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
     try {
+      const url = new URL(req.url, 'http://localhost');
+      // This credential-free probe exposes only manager liveness, never game state or the CSRF token.
+      // It must also work when password/hostname policy would block an ordinary unauthenticated page.
+      if (req.method === 'GET' && url.pathname === '/healthz') return send(res, 200, { ok: true, service: 'plugin-manager' });
       const host = new URL(`http://${req.headers.host}`).hostname.replace(/^\[|\]$/g, '');
       // Passwordless local access must not be exposed through DNS rebinding.
       if (!password && !isIP(host) && host !== 'localhost' && !allowedHosts.includes(host)) return send(res, 403, { error: 'Host not allowed; configure PLUGIN_MANAGER_ALLOWED_HOSTS for this hostname' });
@@ -32,7 +36,6 @@ export function createManagerServer({ api, image, password = '', allowedHosts = 
           return send(res, 401, { error: '需要管理密码，用户名 admin' });
         }
       }
-      const url = new URL(req.url, 'http://localhost');
       if (req.method === 'GET' && files.has(url.pathname)) {
         const [file, mime] = files.get(url.pathname);
         res.writeHead(200, { 'Content-Type': mime });

@@ -47,5 +47,5 @@ RUN node /opt/manager/plugin-manager/configure.mjs "$PLUGIN_SOURCES" \
 USER node
 EXPOSE 3000 3001
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
-    CMD wget -q -O /dev/null "http://127.0.0.1:${PORT}/healthz" || exit 1
+    CMD ["node", "/opt/manager/plugin-manager/healthcheck.mjs"]
 CMD ["node", "/opt/manager/plugin-manager/main.mjs"]
