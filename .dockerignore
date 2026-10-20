@@ -1,0 +1,9 @@
+# The named manager context only needs repository source, never local test data or credentials.
+.git
+.cache
+upstream
+.env
+.env.*
+**/node_modules
+**/__pycache__
+**/*.log

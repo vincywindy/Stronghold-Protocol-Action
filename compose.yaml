@@ -5,15 +5,31 @@ services:
     init: true
     ports:
       - "${BIND_ADDRESS:-0.0.0.0}:${HTTP_PORT:-3000}:3000"
+      - "${MANAGER_BIND_ADDRESS:-127.0.0.1}:${MANAGER_PORT:-3001}:3001"
     environment:
       PORT: "3000"
       HOST: "0.0.0.0"
       SP_COMBAT: ${SP_COMBAT:-client}
       SP_VERIFY: ${SP_VERIFY:-off}
       TRUST_PROXY: ${TRUST_PROXY:-auto}
+      SP_PLUGIN_SCRIPTS: ${SP_PLUGIN_SCRIPTS:-sandbox}
+      PLUGIN_MANAGER_ENABLED: ${PLUGIN_MANAGER_ENABLED:-auto}
+      PLUGIN_MANAGER_PASSWORD: ${PLUGIN_MANAGER_PASSWORD:-}
+      PLUGIN_MANAGER_ALLOWED_HOSTS: ${PLUGIN_MANAGER_ALLOWED_HOSTS:-}
+      PLUGIN_MANAGER_DATA_DIR: /data
+      PLUGIN_MANAGER_PORT: "3001"
+      GAME_RELEASE_API: ${GAME_RELEASE_API:-https://api.github.com/repos/sganggs/Stronghold-Protocol/releases/latest}
+      GAME_UPDATE_URL: ${GAME_UPDATE_URL:-}
+      GAME_UPDATE_SHA256: ${GAME_UPDATE_SHA256:-}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    volumes:
+      - manager-data:/data
     # Rooms live in memory upstream. A volume cannot preserve matches across restarts.
     stop_grace_period: 30s
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
+
+volumes:
+  manager-data:

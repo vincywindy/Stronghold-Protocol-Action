@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { existsSync, readFileSync, statSync } from 'node:fs';
 import { resolve, sep } from 'node:path';
-import { createHash } from 'node:crypto';
 
 const base = process.env.SMOKE_URL || `http://127.0.0.1:${process.env.PORT || 3000}`;
 async function get(path) {
@@ -12,7 +11,7 @@ async function get(path) {
 
 // Allow cold startup on CI, but a permanently broken image must fail the release.
 let ready = false;
-for (let attempt = 0; attempt < 60; attempt++) {
+for (let attempt = 0; attempt < 180; attempt++) {
   try {
     assert.equal((await (await get('/healthz')).json()).ok, true);
     ready = true;
@@ -22,18 +21,13 @@ for (let attempt = 0; attempt < 60; attempt++) {
   }
 }
 assert.ok(ready, 'Server did not become healthy');
-if (process.env.EXPECT_PLUGINS) {
-  const inventory = JSON.parse(readFileSync('plugin-build.json', 'utf8'));
-  assert.deepEqual(inventory.plugins.map(p => p.key).sort(), process.env.EXPECT_PLUGINS.split(',').sort(), 'Image plugin selection differs from the requested build');
-  // Selection means bundling, not a promise that the current game can load the third-party package.
-  for (const plugin of inventory.plugins) {
-    assert.ok(existsSync(plugin.bundlePath), `Selected package was omitted from image: ${plugin.key}`);
-    if (plugin.sha256) assert.equal(createHash('sha256').update(readFileSync(plugin.bundlePath)).digest('hex'), plugin.sha256);
-    else assert.ok(existsSync(`${plugin.bundlePath}/plugin.json`), `Missing original manifest: ${plugin.key}`);
-  }
-  for (const id of inventory.installed) {
-    assert.ok(existsSync(`plugins/${id}/plugin.json`), `Installed plugin omitted from image: ${id}`);
-  }
+if (process.env.EXPECT_PLUGIN_SOURCES) {
+  const response = await fetch('http://127.0.0.1:3001/api/state');
+  assert.equal(response.status, 200, 'Manager API unavailable');
+  const state = await response.json();
+  assert.deepEqual(Object.keys(state.sources).sort(), process.env.EXPECT_PLUGIN_SOURCES.split(',').sort());
+  assert.deepEqual(state.installed, [], 'A new managed image must not install third-party plugins');
+  assert.equal(state.game.alive, true);
 }
 assert.match(await (await get('/')).text(), /<html/i);
 for (const path of ['/vendor/pixi.min.js', '/vendor/preact.module.js', '/data/config.json']) {

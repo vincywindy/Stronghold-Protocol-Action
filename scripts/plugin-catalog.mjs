@@ -38,42 +38,20 @@ export function selectPlugins(input = '', catalog = readCatalog()) {
   });
 }
 export function displayName(plugin, catalog) { return `${catalog.sources[plugin.source].repository.split('/')[1]} + ${plugin.name}`; }
-export function filterSourcePlugins(source, filter = '', catalog = readCatalog()) {
-  if (typeof filter !== 'string') throw new Error(`Invalid filter for ${source}: expected text`);
-  if (!Object.hasOwn(catalog.sources, source)) throw new Error(`Unknown plugin source: ${source}`);
-  const terms = filter.toLowerCase().split(/[\s,，]+/u).filter(Boolean);
-  if (terms.includes('!')) throw new Error(`Invalid filter for ${source}: ! must be followed by a keyword`);
-  const include = terms.filter(term => !term.startsWith('!'));
-  const exclude = terms.filter(term => term.startsWith('!')).map(term => term.slice(1));
-  return catalog.plugins.filter(plugin => {
-    if (plugin.source !== source) return false;
-    const fields = [plugin.id, plugin.name, `${source}/${plugin.id}`].map(value => value.toLowerCase());
-    const matches = term => fields.some(value => value.includes(term));
-    // Positive terms are ORed; exclusions always win, independent of expression order.
-    // Without positive terms, start from the whole selected repository (including an empty filter).
-    return (!include.length || include.some(matches)) && !exclude.some(matches);
-  });
-}
-export function selectBuildPlugins(env, catalog = readCatalog()) {
-  const keys = [env.SELECTED_PLUGINS || ''];
-  // Polling can itself originate from workflow_dispatch; only human builds consume repository filters.
-  if (env.GITHUB_EVENT_NAME === 'workflow_dispatch' && env.AUTOMATED_BUILD !== 'true') {
-    const inputs = JSON.parse(env.WORKFLOW_INPUTS || '{}');
-    if (!inputs || typeof inputs !== 'object' || Array.isArray(inputs)) throw new Error('Invalid workflow inputs');
-    for (const source of Object.keys(catalog.sources)) {
-      const enabled = inputs[`plugins_${source}`];
-      if (enabled === undefined || enabled === false || enabled === 'false') continue;
-      if (enabled !== true && enabled !== 'true') throw new Error(`Invalid repository checkbox: plugins_${source}`);
-      const selected = filterSourcePlugins(source, inputs[`${source}_filter`] ?? '', catalog);
-      // A typo or an over-broad exclusion must not silently publish a vanilla image.
-      if (!selected.length) throw new Error(`No plugins matched ${source}_filter; change the filter or uncheck plugins_${source}`);
-      keys.push(...selected.map(plugin => `${source}/${plugin.id}`));
-    }
-  }
-  return selectPlugins(keys.join(','), catalog);
+export function selectBuildSources(env, catalog = readCatalog()) {
+  // Source permissions are selected only by humans; polls never inherit management choices.
+  if (env.GITHUB_EVENT_NAME !== 'workflow_dispatch' || env.AUTOMATED_BUILD === 'true') return [];
+  const inputs = JSON.parse(env.WORKFLOW_INPUTS || '{}');
+  if (!inputs || typeof inputs !== 'object' || Array.isArray(inputs)) throw new Error('Invalid workflow inputs');
+  return Object.keys(catalog.sources).filter(source => {
+    const enabled = inputs[`plugins_${source}`];
+    if (enabled === undefined || enabled === false || enabled === 'false') return false;
+    if (enabled !== true && enabled !== 'true') throw new Error(`Invalid repository checkbox: plugins_${source}`);
+    return true;
+  }).sort();
 }
 export function forgeImportStatus(report) {
-  // Retrieval is the build contract. Unsupported conversion is visible without excluding the package.
+  // Discovery admits retrievable packages; unsupported conversion remains visible for future updates.
   if (!report.ok || !report.wrote || !report.products?.length) return 'bundled-only';
   if (report.partial || report.needsManualAdaptation || report.skipped?.some(row => !/^The file is in the pack/.test(row.en || ''))) return 'partial';
   return 'imported';

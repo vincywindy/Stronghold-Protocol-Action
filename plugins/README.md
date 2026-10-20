@@ -2,13 +2,11 @@
 
 由 `plugins/catalog.json` 生成。所有检索到的条目均可选择，不按兼容性筛选。名称使用「仓库名 + 插件名」。
 
-在 Actions 的 **Build and publish Docker image** → **Run workflow** 中，勾选所需仓库并填写对应 filter，可同时勾选多个仓库。默认全部不勾选；勾选后 filter 留空表示添加该仓库全部已收录插件。
+构建时勾选仓库只启用管理来源，不安装其中的插件。启动后打开管理网页，在列表中选择需要的插件，再点击“应用选择”；支持跨仓库组合、更新和卸载。
 
-filter 按插件 ID、名称或下表选择键做不区分大小写的字面子串匹配。多个词用逗号（中英文均可）或空白分隔：`xxx` 包含匹配项，`!xxx` 排除匹配项；多个包含词取并集，排除始终优先。只有排除词时从该仓库全部插件中排除。不使用正则或通配符；未勾选仓库的 filter 被忽略。勾选后筛选结果为空会报错，避免误构建原版镜像。
+表中版本是构建目录快照。管理网页的“刷新目录”会重新检索来源 ref，下载固定到这次检索的完整提交 SHA；不按兼容性隐藏条目。安装结果和诊断保存在持久化卷中。
 
-表中版本是检索快照；手动构建会获取来源 ref 的最新提交，并从该提交获取所选包的最新版本。实际版本和完整 SHA 见镜像 `/app/plugin-build.json`。
-
-未选择不添加；安装成功后仍需房主/玩家在游戏中开启。导入失败或仅部分导入不会阻止打包，原包始终保存在 `/app/plugin-sources/`。下载失败、校验失败或游戏无法启动仍会使构建失败。
+安装与房间启用分开。Forge 导入失败时保留原包及诊断；Lele/native 复制到游戏插件目录，但不注入宿主补丁。脚本默认按 sandbox 运行，trusted 插件不会自动获得信任。
 
 | 选择键 | 显示名称 | 快照版本 | 接入方式 |
 | --- | --- | --- | --- |
@@ -56,4 +54,4 @@ filter 按插件 ID、名称或下表选择键做不区分大小写的字面子�
 - forge: [XiaMo233M/Stronghold-Protocol-Forge-Mods](https://github.com/XiaMo233M/Stronghold-Protocol-Forge-Mods)，ref: `main`；[目录检索快照](https://github.com/XiaMo233M/Stronghold-Protocol-Forge-Mods/tree/0dc1a4fc9db9ead85bf41258046e92065bbf6e5f)。
 - lele: [llleeeqi/Stronghold-Protocol-Lele-Mods](https://github.com/llleeeqi/Stronghold-Protocol-Lele-Mods)，ref: `main`；[目录检索快照](https://github.com/llleeeqi/Stronghold-Protocol-Lele-Mods/tree/90f06d473df8b5b30022623fd818f72c9c953d77)。
 
-刷新新增插件：`node scripts/refresh-plugin-catalog.mjs`，再运行 `node scripts/generate-plugin-workflows.mjs` 并提交生成文件。筛选范围是已合并的目录，新增条目需合并目录后才能选择；已有插件更新无需改 Action。生成器按来源生成复选框和 filter，只更新主工作流的插件输入区和本列表。
+维护目录快照：`node scripts/refresh-plugin-catalog.mjs`，再运行 `node scripts/generate-plugin-workflows.mjs`。新增来源需要重新构建镜像；已有来源新增插件可直接在管理网页刷新目录获取。

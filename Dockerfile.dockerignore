@@ -11,9 +11,6 @@
 !schemas/**
 !scripts/**
 !plugins/**
-!plugin-build.json
-!plugin-build-reports/**
-!plugin-sources/**
 !test/helpers/battleHarness.js
 !docs/research/**
 !LICENSE
@@ -24,9 +21,6 @@
 public/vendor
 public/assets
 public/fonts
-# Prepared plugin builds carry their art snapshot and manifests separately from ordinary host files.
-# Their raw packages and import diagnostics are retained even when a plugin cannot be loaded.
-!.plugin-art/**
 public/dev
 data/local-assets.json
 **/node_modules
