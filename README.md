@@ -128,7 +128,7 @@ node --test tests/*.test.mjs
 
 ### 单文件部署（无需 `.env`）
 
-在一个空目录中创建 `compose.yaml`，复制以下完整配置即可使用本仓库的镜像，无需下载仓库或创建 `.env` 文件：
+在一个空目录中创建 `compose.yaml`，复制以下完整配置即可使用游戏和管理中心，无需下载仓库或创建 `.env` 文件。`latest` 默认没有插件仓库来源，管理中心可用于更新游戏；安装插件需将 `image` 换成构建时勾选仓库的自定义标签。
 
 环境变量含义参考[上游「端口与配置」说明](https://github.com/sganggs/Stronghold-Protocol#端口与配置)，下面的注释补充了容器端口与监听地址的配置方式。
 
@@ -140,6 +140,8 @@ services:
     init: true
     ports:
       - "3000:3000"
+      # 管理页面默认仅供宿主机本机访问；远程访问配置见下文。
+      - "127.0.0.1:3001:3001"
     environment:
       # 容器内服务端口，默认 3000；须与 ports 映射右侧的端口一致。
       PORT: "3000"
@@ -155,12 +157,33 @@ services:
       # 是否采信 X-Forwarded-For 等代理转发头：auto（默认）仅信任本机/内网来源；
       # "1" 信任所有来源；"0" 忽略转发头。数字值也需保留引号。
       TRUST_PROXY: "auto"
+      # 1 显式启用管理中心；auto 仅在镜像启用了插件仓库时启用；0 关闭。
+      PLUGIN_MANAGER_ENABLED: "1"
+      # 管理器在容器内监听所有网卡，访问范围由上方宿主机端口映射控制。
+      PLUGIN_MANAGER_HOST: "0.0.0.0"
+      PLUGIN_MANAGER_PORT: "3001"
+      # 可选密码：填写后浏览器会弹出登录框，用户名固定为 admin。
+      # 留空表示无需登录；直接写 YAML 时，密码中的 $ 要写成 $$。
+      PLUGIN_MANAGER_PASSWORD: ""
+      PLUGIN_MANAGER_ALLOWED_HOSTS: ""
+      PLUGIN_MANAGER_DATA_DIR: "/data"
+      SP_PLUGIN_SCRIPTS: "sandbox"
+      GAME_RELEASE_API: "https://api.github.com/repos/sganggs/Stronghold-Protocol/releases/latest"
+      # 可选 HTTPS 更新包直链，填写后优先于上方 Release API。
+      GAME_UPDATE_URL: ""
+      GAME_UPDATE_SHA256: ""
+      GITHUB_TOKEN: ""
+    volumes:
+      - manager-data:/data
     # 对局保存在内存中，挂载数据卷也无法在重启后恢复对局。
     stop_grace_period: 30s
     security_opt:
       - no-new-privileges:true
     cap_drop:
       - ALL
+
+volumes:
+  manager-data:
 ```
 
 在该目录执行：
@@ -170,7 +193,9 @@ docker compose pull
 docker compose up -d
 ```
 
-访问 `http://<服务器地址>:3000`。要使用其他宿主机端口，例如 8080，将 `ports` 改为 `"8080:3000"`，容器内的 `PORT` 保持 `"3000"`。其他配置直接修改上述 YAML 即可。
+游戏访问 `http://<服务器地址>:3000`；管理中心在宿主机本机访问 `http://127.0.0.1:3001`。从其他电脑访问管理页面时，先设置 `PLUGIN_MANAGER_PASSWORD`，再将管理映射改为 `"3001:3001"`，使用 `http://<服务器地址>:3001` 登录。
+
+端口映射格式为 `宿主机地址:宿主机端口:容器端口`（地址可省略）。例如游戏改为 `"8080:3000"`、管理中心改为 `"127.0.0.1:8081:3001"`，只改变访问端口；容器内的 `PORT=3000` 与 `PLUGIN_MANAGER_PORT=3001` 保持不变。管理中心的密码、端口及持久化说明见[管理器部署与持久化](#管理器部署与持久化)。
 
 ### 使用仓库配置与 `.env`
 
@@ -179,6 +204,11 @@ docker compose up -d
 ```dotenv
 IMAGE=ghcr.io/your-name/stronghold-protocol-action:latest
 HTTP_PORT=3000
+# latest 默认无插件来源，设为 1 才能使用管理中心更新游戏。
+PLUGIN_MANAGER_ENABLED=1
+MANAGER_BIND_ADDRESS=127.0.0.1
+MANAGER_PORT=3001
+PLUGIN_MANAGER_PASSWORD=
 ```
 
 ```bash
@@ -190,14 +220,15 @@ docker compose logs -f
 
 访问 `http://<服务器地址>:3000`。镜像内置 `/healthz` 健康检查；联机 WebSocket 路径为 `/ws`，使用反向代理时须转发 WebSocket 升级，并将游戏部署在域名根路径。
 
-使用 Docker 命令直接启动：
+只启动原版游戏、不启用管理器的 Docker 命令：
 
 ```bash
 docker run -d --name stronghold --init --restart unless-stopped \
-  -p 3000:3000 ghcr.io/your-name/stronghold-protocol-action:latest
+  -p 3000:3000 -e PLUGIN_MANAGER_ENABLED=0 \
+  ghcr.io/your-name/stronghold-protocol-action:latest
 ```
 
-更新运行中的服务：
+更新容器镜像（管理器及运行环境；已持久化的游戏通过管理页面更新）：
 
 ```bash
 docker compose pull
@@ -219,29 +250,52 @@ IMAGE=ghcr.io/your-name/stronghold-protocol-action:friends-manager
 PLUGIN_MANAGER_ENABLED=auto
 MANAGER_BIND_ADDRESS=0.0.0.0
 MANAGER_PORT=3001
-PLUGIN_MANAGER_PASSWORD=替换为自己的管理密码
+PLUGIN_MANAGER_PASSWORD='替换为自己的管理密码'
 SP_PLUGIN_SCRIPTS=sandbox
 ```
 
-运行 `docker compose up -d` 后访问 `http://<服务器地址>:3001`。设置了密码时使用用户名 `admin`；密码留空即无登录验证。远程访问建议通过 HTTPS 反向代理。无密码且使用域名访问时，将域名加入 `PLUGIN_MANAGER_ALLOWED_HOSTS`（逗号分隔，仅主机名），以通过 Host 检查。
+运行 `docker compose up -d` 后访问 `http://<服务器地址>:3001`。若仍使用默认 `MANAGER_BIND_ADDRESS=127.0.0.1`，只能在服务器本机访问 `http://127.0.0.1:3001`；仅修改端口数字不会开放远程访问。
 
-不用仓库 Compose 时，可在上面的单文件配置增加：
+**密码登录：** 管理页使用浏览器原生 HTTP Basic 登录框，没有单独的网页注册/登录表单。用户名固定为 **`admin`**，密码为 `PLUGIN_MANAGER_PASSWORD` 的值。留空表示不要求登录，不存在默认密码。`.env` 中密码可用单引号包裹，保留 `$`、`#` 等字符；直接写 Compose YAML 时，字面的 `$` 需写成 `$$`。远程访问建议通过 HTTPS 反向代理。
 
-```yaml
-    ports:
-      - "3000:3000"
-      - "127.0.0.1:3001:3001"
-    environment:
-      # 保留原来的 PORT、HOST 等配置，再添加以下字段。
-      PLUGIN_MANAGER_ENABLED: "1"
-      PLUGIN_MANAGER_PASSWORD: ""
-      SP_PLUGIN_SCRIPTS: "sandbox"
-    volumes:
-      - manager-data:/data
-# 以下放在顶层，与 services 同级。
-volumes:
-  manager-data:
+**修改配置后生效：** 保存 `.env` 或 Compose YAML，再运行 `docker compose up -d`，使 Compose 按新配置重建容器；单独执行 `docker compose restart` 不会重新读取环境变量。修改密码后，若浏览器仍缓存旧凭据，可用无痕窗口重新登录。重建时保留原来的 `manager-data` 卷。
+
+**部署环境变量：** 下表适用于仓库自带的 `compose.yaml`；`.env` 用于 Compose 替换变量，并非其中所有值都会同名传入容器。
+
+| `.env` 配置 | 默认值 | 作用 |
+| --- | --- | --- |
+| `IMAGE` | 必填 | 镜像完整地址；插件管理需要使用已启用对应仓库来源的镜像 |
+| `BIND_ADDRESS` | `0.0.0.0` | 游戏端口在宿主机的绑定地址 |
+| `HTTP_PORT` | `3000` | 游戏宿主机访问端口，映射到容器 `3000` |
+| `PLUGIN_MANAGER_ENABLED` | `auto` | `auto`：有插件来源才启用；`1`：始终启用；`0`：关闭管理器并直接运行镜像内游戏 |
+| `MANAGER_BIND_ADDRESS` | `127.0.0.1` | 管理端口在宿主机的绑定地址；`0.0.0.0` 允许通过服务器网络地址访问 |
+| `MANAGER_PORT` | `3001` | 管理页面宿主机访问端口，映射到容器 `3001`；如设 `8081`，访问地址末尾为 `:8081` |
+| `PLUGIN_MANAGER_PASSWORD` | 空 | 管理页可选密码，用户名固定为 `admin`；空值不要求登录 |
+| `PLUGIN_MANAGER_ALLOWED_HOSTS` | 空 | 无密码时允许的访问域名，如 `manager.example.com`；多个主机名用逗号分隔、不加空格，不含协议、端口或路径。它是 Host 检查配置，不是客户端 IP 白名单 |
+| `SP_PLUGIN_SCRIPTS` | `sandbox` | 游戏插件脚本使用沙盒模式 |
+| `SP_COMBAT` / `SP_VERIFY` / `TRUST_PROXY` | `client` / `off` / `auto` | 游戏战斗计算、结果复算与代理头配置，含义见上方完整示例 |
+
+Release 更新相关的 `GAME_RELEASE_API`、`GAME_UPDATE_URL`、`GAME_UPDATE_SHA256`、`GITHUB_TOKEN` 见[网页更新游戏与可配置的 Release URL](#网页更新游戏与可配置的-release-url)。
+
+仓库 Compose 固定容器内 `PLUGIN_MANAGER_PORT=3001`、`PLUGIN_MANAGER_DATA_DIR=/data`，管理器的 `PLUGIN_MANAGER_HOST` 默认 `0.0.0.0`。不要将 `MANAGER_PORT` 与容器内监听端口混淆：只在 `.env` 添加 `PLUGIN_MANAGER_PORT=8081` 不会改变仓库 Compose 的固定值。确需改变内部端口时，同时修改 Compose 的 `environment` 和端口映射右侧；改变数据目录时，也必须同步调整卷挂载目标。容器内监听地址应保持 `0.0.0.0`，宿主机访问范围由 `MANAGER_BIND_ADDRESS` 控制。
+
+使用反向代理时，让管理域名的根路径转发到 `http://127.0.0.1:3001`（或所设宿主机端口），保留原始 `Host`、`Authorization` 与 `X-Manager-Token` 请求头。无密码且使用域名访问时，需把该域名加入 `PLUGIN_MANAGER_ALLOWED_HOSTS`。当前页面使用根路径资源与 `/api/*`，不能直接挂到游戏域名的 `/manager/` 子路径。
+
+不用 Compose 时，下面是启用管理器的完整 Docker 启动示例（Linux / WSL / Git Bash；替换镜像地址和密码）：
+
+```bash
+docker run -d --name stronghold --init --restart unless-stopped \
+  -p 3000:3000 -p 127.0.0.1:3001:3001 \
+  -e PLUGIN_MANAGER_ENABLED=1 \
+  -e PLUGIN_MANAGER_PORT=3001 \
+  -e PLUGIN_MANAGER_PASSWORD='替换为自己的管理密码' \
+  -e PLUGIN_MANAGER_DATA_DIR=/data \
+  -e SP_PLUGIN_SCRIPTS=sandbox \
+  -v stronghold-manager-data:/data \
+  ghcr.io/your-name/stronghold-protocol-action:friends-manager
 ```
+
+此命令默认仅允许宿主机本机访问管理端；需远程访问时，将 `-p 127.0.0.1:3001:3001` 改为 `-p 3001:3001`。在 `docker run` 中，端口发布由 `-p` 控制，设置 `-e MANAGER_PORT=...` 不会创建映射。上方单文件 Compose 示例已包含完整管理器配置，可直接复制使用，无需拼接 YAML 片段。
 
 管理器在 `/opt/manager`，镜像内的游戏在 `/app`。首次启用时会复制游戏到 `/data/games/<ID>`，大素材镜像首次启动需要额外时间和磁盘空间；之后从数据卷启动。插件目录位于 `/data/generations/<ID>/plugins`，原包位于同代的 `packages/`；`game.json` 与 `current.json` 记录当前选择。备份整个 `/data`，不要只备份某个生成目录。一个数据卷只供一个管理器实例使用。宿主机绑定目录需授予容器用户（默认 UID 1000）写权限。
 
