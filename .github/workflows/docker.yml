@@ -64,7 +64,7 @@ on:
         type: string
         default: ''
       automatic:
-        description: 'Internal vanilla poll; unavailable in the manual dispatch form'
+        description: 'Internal poll with all plugin sources; unavailable in the manual dispatch form'
         type: boolean
         default: false
     secrets:
@@ -175,6 +175,7 @@ jobs:
           LATEST_TAG: ${{ steps.upstream.outputs.is_latest == 'true' && steps.metadata.outputs.latest_tag || '' }}
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REQUIRE_LOCAL_ASSETS: ${{ steps.upstream.outputs.release_tag != '' && env.FETCH_ASSETS == '1' && '1' || '0' }}
+          REQUIRED_PLUGIN_SOURCES: ${{ steps.plugins.outputs.selection }}
         run: node scripts/check-release-image.mjs
 
       - name: Prepare all verified art from the matching full Release
@@ -349,6 +350,7 @@ jobs:
           IMAGE: ${{ needs.validate.outputs.image }}
           IMAGE_TAGS: ${{ needs.validate.outputs.tags }}
           LOCAL_ASSETS_MODE: ${{ needs.validate.outputs.local_assets == 'true' && 'release' || 'none' }}
+          PLUGIN_SOURCES: ${{ needs.validate.outputs.plugins }}
         run: |
           sources=()
           for arch in amd64 arm64; do
@@ -360,7 +362,10 @@ jobs:
           while IFS= read -r tag; do
             [[ -z "$tag" ]] || tags+=(--tag "$tag")
           done <<< "$IMAGE_TAGS"
-          docker buildx imagetools create --annotation "index:io.github.stronghold-protocol.local-assets=$LOCAL_ASSETS_MODE" "${tags[@]}" "${sources[@]}"
+          docker buildx imagetools create \
+            --annotation "index:io.github.stronghold-protocol.local-assets=$LOCAL_ASSETS_MODE" \
+            --annotation "index:io.github.stronghold-protocol.plugin-sources=$PLUGIN_SOURCES" \
+            "${tags[@]}" "${sources[@]}"
           first_tag=${IMAGE_TAGS%%$'\n'*}
           docker buildx imagetools inspect "$first_tag" --raw > manifest.json
           jq -e '[.manifests[].platform | select(.os == "linux") | .architecture] | sort == ["amd64", "arm64"]' manifest.json

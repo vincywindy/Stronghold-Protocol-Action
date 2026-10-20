@@ -65,6 +65,24 @@ test('old images without 3D art are rebuilt even if the release tag is unchanged
   assert.equal(await releaseAlreadyPublished({ ...registry, requireLocalAssets: true }, request), true);
 });
 
+test('source annotations must match the catalog on both aliases, regardless of order', async () => {
+  const options = { ...registry, requiredPluginSources: ['forge', 'lele'] };
+  assert.equal(await releaseAlreadyPublished(options, registryMock()), false);
+  for (const [versionSources, latestSources, expected] of [
+    ['forge,lele', 'lele,forge', true],
+    ['forge', 'forge,lele', false],
+    ['forge,lele', '', false],
+    ['forge,lele,removed', 'forge,lele,removed', false],
+  ]) {
+    const request = async url => url.startsWith('https://ghcr.io/token?')
+      ? response({ token: 'test-token' })
+      : response({ ...index(), annotations: {
+        'io.github.stronghold-protocol.plugin-sources': url.endsWith('/latest') ? latestSources : versionSources,
+      } }, 200, { 'docker-content-digest': 'sha256:complete' });
+    assert.equal(await releaseAlreadyPublished(options, request), expected);
+  }
+});
+
 test('missing version, missing latest and stale latest all require a build', async () => {
   for (const options of [{ versionStatus: 404 }, { latestStatus: 404 }, { latestDigest: 'sha256:old' }]) {
     assert.equal(await releaseAlreadyPublished(registry, registryMock(options)), false);

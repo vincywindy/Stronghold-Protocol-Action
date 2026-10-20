@@ -1,7 +1,7 @@
 import { appendFileSync } from 'node:fs';
 import { pathToFileURL } from 'node:url';
 
-export async function publishedReleaseDigest({ repository, versionTag, latestTag, username, token, requireLocalAssets = false }, request = fetch) {
+export async function publishedReleaseDigest({ repository, versionTag, latestTag, username, token, requireLocalAssets = false, requiredPluginSources }, request = fetch) {
   if (!/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/.test(repository)) throw new Error('Invalid image repository');
   const headers = token ? { Authorization: `Basic ${Buffer.from(`${username}:${token}`).toString('base64')}` } : {};
   const auth = await request(`https://ghcr.io/token?service=ghcr.io&scope=repository:${repository}:pull`, {
@@ -23,6 +23,13 @@ export async function publishedReleaseDigest({ repository, versionTag, latestTag
     const data = await response.json();
     // Upgrade older images that have the same version but predate bundled 3D/local art.
     if (requireLocalAssets && data.annotations?.['io.github.stronghold-protocol.local-assets'] !== 'release') return null;
+    // Same-release images must be rebuilt when their enabled sources differ from today's catalog.
+    // Compare the index annotation so polling does not need to download per-platform image configs.
+    if (requiredPluginSources !== undefined) {
+      const actual = (data.annotations?.['io.github.stronghold-protocol.plugin-sources'] || '').split(',').filter(Boolean);
+      const normalized = values => [...new Set(values)].sort().join(',');
+      if (normalized(actual) !== normalized(requiredPluginSources)) return null;
+    }
     const platforms = new Set((data.manifests || [])
       .filter((entry) => entry.platform?.os === 'linux').map((entry) => entry.platform.architecture));
     const digest = response.headers.get('docker-content-digest');
@@ -45,7 +52,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     build = !await releaseAlreadyPublished({ repository: process.env.GITHUB_REPOSITORY.toLowerCase(),
       versionTag: process.env.VERSION_TAG, latestTag: process.env.LATEST_TAG,
       username: process.env.GITHUB_ACTOR, token: process.env.GHCR_TOKEN,
-      requireLocalAssets: process.env.REQUIRE_LOCAL_ASSETS === '1' });
+      requireLocalAssets: process.env.REQUIRE_LOCAL_ASSETS === '1',
+      requiredPluginSources: process.env.REQUIRED_PLUGIN_SOURCES?.split(',').filter(Boolean) });
   }
   appendFileSync(process.env.GITHUB_OUTPUT, `build=${build}\n`);
   const summary = build ? 'Build required (new release, missing image, or push/manual rebuild).'

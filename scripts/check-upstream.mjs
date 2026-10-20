@@ -4,6 +4,7 @@ import { resolveUpstream } from './resolve-upstream.mjs';
 import { imageMetadata } from './image-metadata.mjs';
 import { publishedReleaseDigest } from './check-release-image.mjs';
 import { dockerhubConfig, dockerhubAlreadySynced } from './dockerhub.mjs';
+import { selectBuildSources } from './plugin-catalog.mjs';
 
 export async function checkUpstream(env, request = fetch) {
   const upstream = await resolveUpstream({ repository: env.UPSTREAM_REPOSITORY,
@@ -14,13 +15,15 @@ export async function checkUpstream(env, request = fetch) {
     signal: AbortSignal.timeout(30000),
   });
   if (!commit.ok) throw new Error(`GitHub commit lookup failed: HTTP ${commit.status}`);
-  // A manually started poll still checks the vanilla automatic publication, never a manual tag.
-  const metadata = imageMetadata({ ...env, AUTOMATED_BUILD: 'true', IMAGE_TAG: '', SELECTED_PLUGINS: '', UPSTREAM_SHA: (await commit.json()).sha,
+  // Manually starting the poll still uses all automatic sources and automatic publication tags.
+  const sources = selectBuildSources({ ...env, AUTOMATED_BUILD: 'true' });
+  const metadata = imageMetadata({ ...env, AUTOMATED_BUILD: 'true', IMAGE_TAG: '', SELECTED_PLUGINS: sources.join(','), UPSTREAM_SHA: (await commit.json()).sha,
     RELEASE_TAG: upstream.releaseTag, IS_LATEST_RELEASE: String(upstream.isLatest) });
   const sourceDigest = await publishedReleaseDigest({ repository: env.GITHUB_REPOSITORY.toLowerCase(),
     versionTag: metadata.checkTag, latestTag: upstream.isLatest ? metadata.latestTag : '',
     username: env.GITHUB_ACTOR, token: env.GITHUB_TOKEN,
-    requireLocalAssets: Boolean(upstream.releaseTag) && env.FETCH_ASSETS === '1' }, request);
+    requireLocalAssets: Boolean(upstream.releaseTag) && env.FETCH_ASSETS === '1',
+    requiredPluginSources: sources }, request);
   if (!sourceDigest) return { needed: true, reason: `${metadata.checkTag}: GHCR publication is missing or incomplete.` };
 
   const hub = dockerhubConfig(env);

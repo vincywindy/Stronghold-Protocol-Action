@@ -39,8 +39,9 @@ export function selectPlugins(input = '', catalog = readCatalog()) {
 }
 export function displayName(plugin, catalog) { return `${catalog.sources[plugin.source].repository.split('/')[1]} + ${plugin.name}`; }
 export function selectBuildSources(env, catalog = readCatalog()) {
-  // Source permissions are selected only by humans; polls never inherit management choices.
-  if (env.GITHUB_EVENT_NAME !== 'workflow_dispatch' || env.AUTOMATED_BUILD === 'true') return [];
+  // Automatic images expose every registered source; installation remains a runtime choice.
+  if (env.AUTOMATED_BUILD === 'true' || ['push', 'schedule'].includes(env.GITHUB_EVENT_NAME)) return Object.keys(catalog.sources).sort();
+  if (env.GITHUB_EVENT_NAME !== 'workflow_dispatch') return [];
   const inputs = JSON.parse(env.WORKFLOW_INPUTS || '{}');
   if (!inputs || typeof inputs !== 'object' || Array.isArray(inputs)) throw new Error('Invalid workflow inputs');
   return Object.keys(catalog.sources).filter(source => {

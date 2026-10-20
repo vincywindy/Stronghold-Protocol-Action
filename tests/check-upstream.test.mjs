@@ -12,8 +12,9 @@ const env = { UPSTREAM_REPOSITORY: 'upstream/game', REQUESTED_REF: 'latest',
 const hubEnv = { ...env, DOCKERHUB_USERNAME: 'owner', DOCKERHUB_TOKEN: 'hub-token' };
 const response = (body, status = 200, headers = {}) => new Response(JSON.stringify(body), { status, headers });
 const index = { manifests: ['amd64', 'arm64'].map((architecture) => ({ platform: { os: 'linux', architecture } })),
-  annotations: { 'io.github.stronghold-protocol.local-assets': 'release' } };
-function mock({ ghcrMissing = false, hubMissing = '', hubStatus = 200, hubDigest = 'sha256:complete', release = true } = {}) {
+  annotations: { 'io.github.stronghold-protocol.local-assets': 'release',
+    'io.github.stronghold-protocol.plugin-sources': 'forge,lele' } };
+function mock({ ghcrMissing = false, hubMissing = '', hubStatus = 200, hubDigest = 'sha256:complete', release = true, sources = 'forge,lele' } = {}) {
   const calls = [];
   const request = async (url, options) => {
     calls.push({ url, options });
@@ -23,7 +24,8 @@ function mock({ ghcrMissing = false, hubMissing = '', hubStatus = 200, hubDigest
     if (url.startsWith('https://ghcr.io/token?') || url.startsWith('https://auth.docker.io/token?')) {
       return response({ token: 'registry-token' });
     }
-    if (url.startsWith('https://ghcr.io/v2/')) return response(index, ghcrMissing ? 404 : 200,
+    if (url.startsWith('https://ghcr.io/v2/')) return response({ ...index,
+      annotations: { ...index.annotations, 'io.github.stronghold-protocol.plugin-sources': sources } }, ghcrMissing ? 404 : 200,
       { 'docker-content-digest': 'sha256:complete' });
     if (url.startsWith('https://registry-1.docker.io/v2/')) return response({},
       hubMissing && url.endsWith(`/manifests/${hubMissing}`) ? 404 : hubStatus,
@@ -40,13 +42,21 @@ test('unchanged complete release ends the poll without dispatching publication',
   assert.ok(calls.every(({ url }) => !url.includes('docker.io')));
 });
 
-test('a manually started poll ignores manual plugin/tag state and still checks vanilla latest', async () => {
+test('a manually started poll ignores manual plugin/tag state and still checks automatic latest', async () => {
   const { request, calls } = mock();
   const result = await checkUpstream({ ...env, GITHUB_EVENT_NAME: 'workflow_dispatch',
     IMAGE_TAG: 'friends', SELECTED_PLUGINS: 'lele/lele-rounds' }, request);
   assert.equal(result.needed, false);
   assert.ok(calls.some(({ url }) => url.endsWith('/manifests/latest')));
   assert.ok(calls.every(({ url }) => !url.includes('friends') && !url.includes('lele')));
+});
+
+test('poll upgrades same-release images missing any enabled source before probing the mirror', async () => {
+  for (const sources of [undefined, '', 'forge', 'lele', 'forge,lele,removed-source']) {
+    const { request, calls } = mock({ sources: sources ?? '' });
+    assert.equal((await checkUpstream(hubEnv, request)).needed, true);
+    assert.ok(calls.every(({ url }) => !url.includes('docker.io')));
+  }
 });
 
 test('missing GHCR publication requests a build before probing Docker Hub', async () => {
@@ -114,7 +124,7 @@ test('automatic dispatch rechecks publication but ordinary manual runs still for
       const result = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8',
         env: { ...process.env, GITHUB_EVENT_NAME: 'workflow_dispatch', CHECK_PUBLISHED: String(automatic),
           GITHUB_REPOSITORY: 'owner/game', VERSION_TAG: 'v1', LATEST_TAG: 'latest',
-          REQUIRE_LOCAL_ASSETS: '1', GITHUB_OUTPUT: output, GITHUB_STEP_SUMMARY: '' } });
+          REQUIRE_LOCAL_ASSETS: '1', REQUIRED_PLUGIN_SOURCES: 'forge,lele', GITHUB_OUTPUT: output, GITHUB_STEP_SUMMARY: '' } });
       assert.equal(result.status, 0, result.stderr);
       assert.equal(readFileSync(output, 'utf8'), `build=${!automatic}\n`);
     }

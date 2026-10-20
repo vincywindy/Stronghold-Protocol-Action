@@ -78,12 +78,17 @@ test('one build form has an unchecked checkbox per repository, independent of pl
   assert.throws(() => generatedFiles(catalog), /25 inputs/);
 });
 
-test('build selects repository access without preinstalling plugins and polls remain empty', () => {
+test('automatic builds enable all catalog sources while manual builds keep explicit choices', () => {
   const env = { GITHUB_EVENT_NAME: 'workflow_dispatch', WORKFLOW_INPUTS: JSON.stringify({ plugins_forge: true, plugins_lele: true }) };
   assert.deepEqual(selectBuildSources(env), ['forge', 'lele']);
   assert.deepEqual(selectBuildSources({ GITHUB_EVENT_NAME: 'workflow_dispatch' }), []);
-  assert.deepEqual(selectBuildSources({ ...env, AUTOMATED_BUILD: 'true' }), []);
-  assert.deepEqual(selectBuildSources({ ...env, GITHUB_EVENT_NAME: 'push' }), []);
+  const catalog = readCatalog();
+  catalog.sources.community = { ...catalog.sources.forge, repository: 'example/community' };
+  for (const mode of [{ AUTOMATED_BUILD: 'true' }, { GITHUB_EVENT_NAME: 'push' }, { GITHUB_EVENT_NAME: 'schedule' }]) {
+    // New registered sources join automatic builds without editing either workflow's source list.
+    assert.deepEqual(selectBuildSources({ ...env, WORKFLOW_INPUTS: '{}', ...mode }, catalog), ['community', 'forge', 'lele']);
+  }
+  assert.deepEqual(selectBuildSources({ ...env, GITHUB_EVENT_NAME: 'pull_request' }), []);
   assert.throws(() => selectBuildSources({ ...env, WORKFLOW_INPUTS: '{' }));
 });
 
@@ -104,6 +109,17 @@ test('repository selection enforces explicit isolated tags before producing sele
     const result = spawnSync(process.execPath, ['scripts/validate-plugin-inputs.mjs'], { env: { ...env, IMAGE_TAG: 'friends' }, encoding: 'utf8' });
     assert.equal(result.status, 0, result.stderr);
     assert.equal(fs.readFileSync(output, 'utf8'), 'selection=forge,lele\n');
+    for (const [id, mode] of Object.entries({
+      push: { GITHUB_EVENT_NAME: 'push' }, schedule: { GITHUB_EVENT_NAME: 'schedule' },
+      poll: { AUTOMATED_BUILD: 'true' },
+    })) {
+      const autoOutput = path.join(dir, id);
+      const automatic = spawnSync(process.execPath, ['scripts/validate-plugin-inputs.mjs'], {
+        env: { ...env, ...mode, WORKFLOW_INPUTS: '{}', IMAGE_TAG: '', GITHUB_OUTPUT: autoOutput }, encoding: 'utf8',
+      });
+      assert.equal(automatic.status, 0, automatic.stderr);
+      assert.equal(fs.readFileSync(autoOutput, 'utf8'), 'selection=forge,lele\n');
+    }
   } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });
 

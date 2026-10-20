@@ -45,8 +45,8 @@ test('every human build is isolated from latest, release and upstream-SHA tags',
   }
 });
 
-test('plugin builds require explicit custom tags and publish that tag only', () => {
-  const manual = { ...base, GITHUB_EVENT_NAME: 'workflow_dispatch', SELECTED_PLUGINS: 'forge/theme-night' };
+test('manual plugin builds require explicit custom tags and publish that tag only', () => {
+  const manual = { ...base, GITHUB_EVENT_NAME: 'workflow_dispatch', SELECTED_PLUGINS: 'forge,lele' };
   assert.throws(() => imageMetadata(manual), /explicit image_tag/);
   const result = imageMetadata({ ...manual, IMAGE_TAG: 'friends-031' });
   assert.deepEqual(result.tags, [`${result.image}:friends-031`]);
@@ -63,8 +63,11 @@ test('manual tags cannot collide with automatic publication namespaces or inject
   assert.throws(() => imageMetadata({ ...base, IMAGE_TAG: 'custom' }), /only allowed/);
 });
 
-test('internal poll calls retain automatic vanilla aliases, including manually triggered polls', () => {
-  assert.deepEqual(imageMetadata({ ...base, GITHUB_EVENT_NAME: 'workflow_dispatch', AUTOMATED_BUILD: 'true' }).tags, imageMetadata(base).tags);
+test('pushes and polls with sources retain automatic aliases, including manually triggered polls', () => {
+  for (const mode of [{ GITHUB_EVENT_NAME: 'push' }, { GITHUB_EVENT_NAME: 'schedule' },
+    { GITHUB_EVENT_NAME: 'workflow_dispatch', AUTOMATED_BUILD: 'true' }]) {
+    assert.deepEqual(imageMetadata({ ...base, ...mode, SELECTED_PLUGINS: 'forge,lele' }).tags, imageMetadata(base).tags);
+  }
 });
 
 test('unreleased branches get only a SHA tag', () => {

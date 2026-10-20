@@ -15,7 +15,7 @@ ghcr.io/<你的 GitHub 用户名或组织>/<本仓库名>:latest
 ## 1. 启用自动构建
 
 1. 在 GitHub 创建仓库，例如 `Stronghold-Protocol-Action`，把本目录中的文件提交并推送到默认分支（通常为 `main`）。不要提交 `.cache/` 或下载的上游源码。
-2. 首次推送构建文件会自动发布原版镜像。也可打开 **Actions → Check upstream updates → Run workflow** 检查并补齐原版镜像；**Build and publish Docker image** 手动运行只发布独立标签，不覆盖 `latest`。
+2. 首次推送构建文件会自动发布启用全部插件仓库来源的镜像。也可打开 **Actions → Check upstream updates → Run workflow** 检查并补齐自动镜像；**Build and publish Docker image** 手动运行只发布独立标签，不覆盖 `latest`。
 3. 无需新增 Secrets：发布使用 GitHub 自动提供的 `GITHUB_TOKEN`，工作流声明了 `contents: read` 与 `packages: write`。组织策略需允许这些操作；出现 `permission_denied: write_package` 时检查组织策略及同名 Package 的 Actions 访问权限。
 4. 构建成功后，在仓库 **Packages** 中查看镜像，Actions 运行摘要中有完整镜像名称、上游提交和镜像 digest。
 5. GHCR 新建包通常默认为私有。若希望免登录拉取，可在 Package settings 中把可见性改为 Public；保持私有时，部署主机需要先使用具有 `read:packages` 权限的 Personal access token (classic) 登录 `ghcr.io`。
@@ -26,22 +26,22 @@ ghcr.io/<你的 GitHub 用户名或组织>/<本仓库名>:latest
 
 | 事件 | 行为 |
 | --- | --- |
-| 默认分支推送构建相关文件 | 构建、验证两个架构并发布 |
-| 每 6 小时检查 | 只查询上游与镜像清单；需要时调用共享构建 / 补同步，插件固定为空 |
+| 默认分支推送构建相关文件 | 默认启用全部插件仓库来源，构建、验证两个架构并发布 |
+| 每 6 小时检查 | 只查询上游与镜像清单；需要时调用共享构建 / 补同步，默认启用全部插件仓库来源，不预装插件 |
 | 手动构建 | 可指定上游版本、素材及插件；只发布独立标签，不更新 `latest` / `latest-lite` |
 | Pull Request | 在原生 amd64 / arm64 runner 上构建并验证精简镜像，不登录、不发布 |
 | 非默认分支推送 | 仅检查工作流、标签规则和 Compose 配置 |
 | 在非默认分支手动运行 | 构建验证，但不发布 |
 
-检查工作流位于 `.github/workflows/check-upstream.yml`，使用 cron `17 */6 * * *`，只在默认分支运行。计划时间为 UTC 00:17、06:17、12:17、18:17，即北京时间每天 **02:17、08:17、14:17、20:17**。检查 job 超时上限 5 分钟；无变化时跳过构建，有变化时在同一次运行中调用 `docker.yml` 可复用工作流。也可在 Actions → **Check upstream updates → Run workflow** 手动检查；这仍属于自动原版维护，插件固定为空。
+检查工作流位于 `.github/workflows/check-upstream.yml`，使用 cron `17 */6 * * *`，只在默认分支运行。计划时间为 UTC 00:17、06:17、12:17、18:17，即北京时间每天 **02:17、08:17、14:17、20:17**。检查 job 超时上限 5 分钟；无变化时跳过构建，有变化时在同一次运行中调用 `docker.yml` 可复用工作流。也可在 Actions → **Check upstream updates → Run workflow** 手动检查；这仍属于自动镜像维护，默认启用全部插件仓库来源，不预装插件。
 
 检查阶段只检出本仓库脚本，通过 API 查询上游版本、提交与 GHCR / Docker Hub 镜像清单，不下载源码或素材。检查 job 仅需 `packages: read`；发布 job 使用 `packages: write` 调用共享构建，无需 `actions: write` 或额外 PAT。内部 `automatic` 参数与用户手动构建入口分开，自动发布排队后会再次检查 GHCR 并重新解析上游版本。
 
 GitHub 可能排队延迟或丢弃高负载时的调度，不能保证准点执行；上游发布 Release 不会直接触发本仓库，通常在下一次六小时检查时跟进。公开仓库长期无活动时 GitHub 可能停用定时任务，可在 Actions 页面重新启用。参见 [GitHub 定时事件说明](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule)。
 
-定时检查通过 GitHub 的 latest Release API 获取正式版本，实际构建从其 Git Tag 检出代码，保持应用代码、镜像版本标签和镜像 `org.opencontainers.image.version` 一致。仅当该版本标签与 `latest` 指向同一个包含 amd64 / arm64 的镜像时，才跳过构建；含素材版本还会检查已经包含 Release 本地素材的标记，旧的无 3D 素材镜像会自动补建。检查失败会报错，不会当成“没有更新”。精简镜像独立检查带 `-lite` 的标签。固定历史 Release 时只检查该版本，不覆盖当前 `latest`。
+定时检查通过 GitHub 的 latest Release API 获取正式版本，实际构建从其 Git Tag 检出代码，保持应用代码、镜像版本标签和镜像 `org.opencontainers.image.version` 一致。仅当该版本标签与 `latest` 指向同一个包含 amd64 / arm64 的镜像时，才跳过构建；含素材版本还会检查已经包含 Release 本地素材的标记，旧的无 3D 素材镜像会自动补建。同时检查镜像索引中的插件来源标记：旧镜像缺少来源，或登记的来源集合变化时，即使游戏版本未变也会补建；来源完整后不重复构建。检查失败会报错，不会当成“没有更新”。精简镜像独立检查带 `-lite` 的标签。固定历史 Release 时只检查该版本，不覆盖当前 `latest`。
 
-版本未变且镜像已完整发布时不会定时刷新基础镜像或素材。手动构建可强制重建并发布独立标签；推送构建相关文件会重新构建自动原版标签。若上游移动了同名 Release Tag，已有标签不会仅因定时检查而重建。
+版本未变且镜像已完整发布时不会定时刷新基础镜像或素材。手动构建可强制重建并发布独立标签；推送构建相关文件会重新构建自动发布标签。若上游移动了同名 Release Tag，已有标签不会仅因定时检查而重建。
 
 ### 可选配置
 
@@ -64,6 +64,8 @@ GitHub 可能排队延迟或丢弃高负载时的调度，不能保证准点执�
 | Forge 工坊包 | [XiaMo233M/Stronghold-Protocol-Forge-Mods](https://github.com/XiaMo233M/Stronghold-Protocol-Forge-Mods) | `forge/` |
 | 乐勒砳插件 | [llleeeqi/Stronghold-Protocol-Lele-Mods](https://github.com/llleeeqi/Stronghold-Protocol-Lele-Mods) | `lele/` |
 
+自动构建的 `latest` / `latest-lite` 默认启用所有已登记来源（目前为 Forge 和乐勒砳），管理器随容器启动，初始安装列表为空。直接部署即可在网页选择安装插件；以后新增登记仓库也会自动纳入。需要限制来源的手动镜像可按以下步骤构建：
+
 1. 在 **Actions → Build and publish Docker image → Run workflow** 勾选需要的仓库，两个仓库可以同时勾选，默认均不勾选。
 2. 填写独立的 `image_tag`，例如 `friends-manager`。勾选仓库只启用管理器中的下载来源，**构建时不下载、不安装任何第三方插件，也不修改游戏源码**。旧的 filter 输入框已移除，具体插件改在网页中选择。
 3. 使用该标签部署，挂载 `/data` 并映射管理端口 3001。下方提供完整配置。
@@ -84,7 +86,7 @@ Forge 使用上游离线导入器；原生/乐勒砳包复制到标准插件目�
 
 安装状态为 `copied`（已复制）、`imported`（已导入）、`partial`（部分导入）、`bundled-only`（仅保留原包）。下载成功不等于玩法验证通过。所有已安装插件、原包、版本、来源提交、校验结果与游戏插件配置都放在 `/data`；新目录完成后才切换指针，游戏继续使用旧目录直至重启。一次成功操作后保留当前、上一次和仍在运行的目录，其余历史目录自动清理。
 
-**标签隔离：** 勾选任意仓库必须填写自定义标签；任何手动构建都不更新 `latest` / `latest-lite`、上游 Release 或 SHA 标签。自动轮询始终不选插件仓库，也不自动安装插件。
+**标签隔离：** 手动构建勾选任意仓库必须填写自定义标签；任何手动构建都不更新 `latest` / `latest-lite`、上游 Release 或 SHA 标签。定时检查和推送构建默认启用全部来源，使用自动发布标签；构建时不自动安装插件。
 
 ### 插件开发者与目录维护
 
@@ -111,7 +113,7 @@ node --test tests/*.test.mjs
 
 默认镜像地址是 `docker.io/<DOCKERHUB_USERNAME>/<本 GitHub 仓库名的小写形式>`。若要指定仓库或组织，在 **Variables** 中添加 `DOCKERHUB_REPOSITORY`，例如 `your-name/stronghold-protocol` 或 `your-org/stronghold-protocol`，必须全小写，不含 `docker.io/`、标签或协议。提前在 Docker Hub 创建对应仓库并设置 Public / Private；用于登录的用户及 Token 需要该仓库的推送权限。
 
-配置完成后，可手动运行 **Check upstream updates** 或等待轮询补齐原版 Docker Hub 标签；手动构建则同步其独立标签。Docker Hub 与 GHCR 使用相同标签，同步两个架构及构建证明，不重复构建。轮询会比对自动标签的 manifest digest：已经一致则跳过；缺失或不同时补齐发布。
+配置完成后，可手动运行 **Check upstream updates** 或等待轮询补齐自动发布的 Docker Hub 标签；手动构建则同步其独立标签。Docker Hub 与 GHCR 使用相同标签，同步两个架构及构建证明，不重复构建。轮询会比对自动标签的 manifest digest：已经一致则跳过；缺失或不同时补齐发布。
 
 同步通过 [Skopeo](https://github.com/containers/skopeo/blob/main/docs/skopeo-copy.1.md) 复制完整多架构镜像并校验 digest。凭据已配置但无效、权限不足或同步失败时，检查或 Docker Hub 同步任务会报错，已经发布成功的 GHCR 镜像仍可使用；修正配置后可重新运行任务或等待下一次定时检查。删除任一 Secret 即可停用 Docker Hub 推送。
 
@@ -134,7 +136,7 @@ node --test tests/*.test.mjs
 
 ### 单文件部署（无需 `.env`）
 
-在一个空目录中创建 `compose.yaml`，复制以下完整配置即可使用游戏和管理中心，无需下载仓库或创建 `.env` 文件。`latest` 默认没有插件仓库来源，管理中心可用于更新游戏；安装插件需将 `image` 换成构建时勾选仓库的自定义标签。
+在一个空目录中创建 `compose.yaml`，复制以下完整配置即可使用游戏和管理中心，无需下载仓库或创建 `.env` 文件。`latest` 默认启用全部插件仓库来源，管理中心可用于安装插件和更新游戏；插件需要在管理页面选择后安装。
 
 环境变量含义参考[上游「端口与配置」说明](https://github.com/sganggs/Stronghold-Protocol#端口与配置)，下面的注释补充了容器端口与监听地址的配置方式。
 
@@ -210,8 +212,8 @@ docker compose up -d
 ```dotenv
 IMAGE=ghcr.io/your-name/stronghold-protocol-action:latest
 HTTP_PORT=3000
-# latest 默认无插件来源，设为 1 才能使用管理中心更新游戏。
-PLUGIN_MANAGER_ENABLED=1
+# latest 已启用全部来源，auto 会启动管理中心。
+PLUGIN_MANAGER_ENABLED=auto
 MANAGER_BIND_ADDRESS=127.0.0.1
 MANAGER_PORT=3001
 PLUGIN_MANAGER_PASSWORD=
@@ -381,7 +383,7 @@ bash scripts/smoke-image.sh stronghold-protocol:local linux/amd64
 
 发布流水线在 `ubuntu-24.04`（amd64）与 `ubuntu-24.04-arm`（arm64）上分别原生构建、启动镜像，不使用 QEMU。两个任务使用同一个预先解析的上游提交，分别缓存依赖。检查覆盖健康接口、首页、前端库、游戏数据、WebSocket 握手和容器 HEALTHCHECK。
 
-发布运行先将候选镜像按 digest 上传至 GHCR，再在对应原生 CPU 上测试该 digest。只有两个架构全部通过，才合并已测试的 digest 并发布本次应有的标签：自动构建使用原版标签，手动构建只使用独立标签，合并时不重新构建。启用管理器来源的镜像额外检查管理接口、来源列表、初始插件为空及游戏进程健康；不在构建阶段安装第三方插件。任一架构失败会阻止标签更新，但 GHCR 可能保留无标签候选镜像。PR 与非默认分支手动运行只测试本地镜像，不向 GHCR 上传。
+发布运行先将候选镜像按 digest 上传至 GHCR，再在对应原生 CPU 上测试该 digest。只有两个架构全部通过，才合并已测试的 digest 并发布本次应有的标签：自动构建启用全部来源并使用自动发布标签，手动构建只使用独立标签，合并时不重新构建。启用管理器来源的镜像额外检查管理接口、来源列表、初始插件为空及游戏进程健康；不在构建阶段安装第三方插件。任一架构失败会阻止标签更新，但 GHCR 可能保留无标签候选镜像。PR 与非默认分支手动运行只测试本地镜像，不向 GHCR 上传。
 
 检查不包含真实浏览器渲染和完整游戏对局。Actions 固定到提交 SHA，由 Dependabot 提议更新。
 

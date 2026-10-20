@@ -46,12 +46,11 @@ jobs:
     permissions:
       contents: read
       packages: write
-    # Reusable calls distinguish automatic polls from human dispatches without an exposed bypass checkbox.
+    # Automatic builds enable every catalog source; actual plugins are installed through the manager.
     uses: ./.github/workflows/docker.yml
     with:
       automatic: true
       upstream_ref: ${{ vars.UPSTREAM_REF || 'latest' }}
       include_assets: ${{ (vars.FETCH_ASSETS || '1') == '1' }}
-      plugins: ''
       image_tag: ''
     secrets: inherit

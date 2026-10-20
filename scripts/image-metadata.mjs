@@ -13,7 +13,7 @@ export function imageMetadata(env) {
   const manual = env.GITHUB_EVENT_NAME === 'workflow_dispatch' && env.AUTOMATED_BUILD !== 'true';
   const customTag = env.IMAGE_TAG || '';
   const hasPlugins = Boolean(env.SELECTED_PLUGINS?.trim());
-  if (hasPlugins && (!manual || !customTag)) throw new Error('Plugin builds require a manual build and an explicit image_tag');
+  if (manual && hasPlugins && !customTag) throw new Error('Manual plugin builds require an explicit image_tag');
   if (customTag && !manual) throw new Error('image_tag is only allowed for manual builds');
   // Keep manual/custom builds out of latest, upstream-SHA and semantic-release namespaces.
   if (customTag && (!/^[\w][\w.-]{0,127}$/.test(customTag) || /^(latest(?:-|$)|sha-|v?\d+\.\d+\.\d+)/i.test(customTag))) {
