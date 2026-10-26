@@ -88,7 +88,13 @@ input[type=search] { width: 100%; margin: 12px 0; background: #090d0b; border-co
 input[type=search]::placeholder { color: var(--text-lo); }
 input[type=checkbox] { accent-color: var(--mint); width: 17px; height: 17px; margin: 0; flex-shrink: 0; cursor: pointer; }
 label { display: flex; gap: 12px; align-items: center; cursor: pointer; }
+.plugin-tabs { display: flex; gap: 0; border-bottom: 1px solid var(--line-2); margin-top: 20px; }
+.plugin-tabs button { min-height: 42px; padding: 8px 20px; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--text-lo); }
+.plugin-tabs button:hover { background: #4ed8af08; border-bottom-color: var(--line-2); }
+.plugin-tabs button[aria-selected="true"] { color: var(--mint); border-bottom-color: var(--mint); font-weight: 700; }
+.plugin-tabs span { margin-left: 6px; font: 11px var(--mono); }
 .plugin-list { max-height: 570px; overflow: auto; overscroll-behavior: contain; margin: 8px 0 20px; scrollbar-color: var(--line-2) transparent; scrollbar-width: thin; }
+.plugin-empty { padding: 30px 12px; text-align: center; color: var(--text-lo); }
 .plugin-list article { padding: 16px 12px; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: 8px 16px; flex-wrap: wrap; border-left: 2px solid transparent; }
 .plugin-list article:hover { background: #4ed8af04; }
 .plugin-list article.is-selected { border-left-color: var(--mint); background: #4ed8af06; }

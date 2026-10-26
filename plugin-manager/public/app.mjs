@@ -8,7 +8,7 @@ const jobStates = { running: '进行中', success: '已完成', failed: '失败'
 const label = p => typeof p.name === 'string' ? p.name : p.name?.zh || p.id;
 function App() {
   const [state, setState] = useState(null), [selected, setSelected] = useState(new Set());
-  const [filter, setFilter] = useState(''), [error, setError] = useState('');
+  const [filter, setFilter] = useState(''), [view, setView] = useState('all'), [error, setError] = useState('');
   const dirty = useRef(false);
   const setDirty = value => { dirty.current = value; };
   const [restart, setRestart] = useState(false);
@@ -37,13 +37,25 @@ function App() {
   if (!state) return html`<main><h1>卫戍协议 · 管理中心</h1><p>${error || '正在连接…'}</p></main>`;
   const busy = state.job?.status === 'running';
   const installed = new Map(state.installed.map(p => [p.key, p]));
+  const leleInstalled = state.installed.filter(p => p.adapter === 'lele');
+  const incompatibleLele = leleInstalled.length > 0 && state.host?.version !== state.game.version;
   const rows = [...state.catalog];
   for (const record of state.installed) if (!rows.some(p => `${p.source}/${p.id}` === record.key)) {
     const [source, id] = record.key.split('/');
     rows.push({ source, id, name: id, version: '来源已移除' });
   }
-  const visible = rows.filter(p => `${p.source}/${p.id} ${state.sources[p.source]?.repository || ''} ${label(p)}`.toLowerCase().includes(filter.toLowerCase()));
+  // The installed view reflects the active generation, not unchecked changes waiting to be applied.
+  const visible = rows.filter(p => (view === 'all' || installed.has(`${p.source}/${p.id}`)) &&
+    `${p.source}/${p.id} ${state.sources[p.source]?.repository || ''} ${label(p)}`.toLowerCase().includes(filter.toLowerCase()));
   function toggle(key, checked) { const next = new Set(selected); checked ? next.add(key) : next.delete(key); setSelected(next); setDirty(true); }
+  function tabKey(event) {
+    const next = event.key === 'Home' ? 'all' : event.key === 'End' ? 'installed' :
+      ['ArrowLeft', 'ArrowRight'].includes(event.key) ? view === 'all' ? 'installed' : 'all' : null;
+    if (!next) return;
+    event.preventDefault();
+    setView(next);
+    event.currentTarget.parentElement.querySelector(`[data-view="${next}"]`)?.focus();
+  }
   return html`<main>
     <div class="masthead"><span class="service"><span class="crosshair" aria-hidden="true">+</span>STRONGHOLD PROTOCOL // MANAGEMENT</span><span class="node-label">TACTICAL CO-OP NODE · 管理终端</span></div>
     <header><div><p class="eyebrow">STRONGHOLD PROTOCOL <span>ALLIANCE</span></p><h1>卫戍协议 · <em>管理中心</em></h1><p class="subtitle">维护游戏版本与插件，在房间中选择本局启用的内容。</p></div><span class=${state.game.alive ? 'connection is-online' : 'connection warn'}>${state.game.alive ? '游戏运行中' : '游戏未运行'}</span></header>
@@ -52,23 +64,31 @@ function App() {
     <section><div class="section-title"><div class="section-heading"><span class="section-number" aria-hidden="true">01</span><div><h2>游戏版本 <span class="version">${state.game.version || '未知'}</span></h2><div class="section-caption">VERSION CONTROL</div></div></div></div>
       <p class="release-source"><span>更新来源</span><code>${state.releaseSource}</code></p>
       <p class="muted">当前宿主：${state.game.host ? `Lele API ${state.game.host.api} · ${state.game.host.version} · ${state.game.host.revision.slice(0, 12)}` : '原版'}${state.host && state.restartRequired ? '；已准备 Lele 兼容层，重启后生效' : ''}</p>
+      ${incompatibleLele && html`<p class="warn" role="alert">已安装的 Lele 宿主补丁仅适配游戏 ${state.host?.version || '未知版本'}，当前游戏为 ${state.game.version}。目录中的插件包版本不代表宿主补丁兼容。请等待 Lele 作者发布适配补丁，或移除 Lele 插件以恢复原版宿主。</p>`}
       <p class="muted">优先下载增量更新包，基线不匹配时尝试精简程序包；保留现有素材和插件。更新、回退及重启会中断正在进行的对局。</p>
       <div class="actions"><button disabled=${busy} onClick=${() => action('check-update')}>检查更新</button>
       <button disabled=${busy} onClick=${() => action('update-game', {}, '下载并更新游戏？切换版本时将中断当前对局，启动失败会恢复原版本。')}>下载更新并重启</button>
       <button disabled=${busy || !state.game.previousVersion} onClick=${() => action('rollback-game', {}, '回退游戏并重启？当前对局将中断。')}>回退${state.game.previousVersion ? `到 ${state.game.previousVersion}` : ''}</button>
       <button disabled=${busy} onClick=${() => action('restart', {}, '重启游戏会中断当前对局，是否继续？')}>重启游戏</button></div>
+      ${incompatibleLele && html`<div class="actions"><button disabled=${busy} onClick=${() => action('apply', { keys: state.installed.filter(p => p.adapter !== 'lele').map(p => p.key), restart: true }, '移除全部 Lele 插件并重启游戏？其他已安装插件会保留；当前对局将中断。')}>移除全部 Lele 插件并重启</button></div>`}
       ${state.restartRequired && html`<p class="warn">插件目录有待应用的变更，请在合适的时候重启游戏。</p>`}
     </section>
     <section><div class="section-title"><div class="section-heading"><span class="section-number" aria-hidden="true">02</span><div><h2>插件仓库</h2><div class="section-caption">PLUGIN REPOSITORIES</div></div></div><button disabled=${busy} onClick=${() => action('refresh')}>刷新目录 / 检查插件更新</button></div>
       <p class="muted">勾选后应用才会下载。取消勾选并应用会卸载。更新先刷新目录，再点击“更新已选插件”。</p>
+      <div class="plugin-tabs" role="tablist" aria-label="插件视图" onKeyDown=${tabKey}>
+        <button type="button" role="tab" id="plugins-all-tab" data-view="all" aria-controls="plugin-results" aria-selected=${view === 'all'} tabIndex=${view === 'all' ? 0 : -1} onClick=${() => setView('all')}>全部 <span>${rows.length}</span></button>
+        <button type="button" role="tab" id="plugins-installed-tab" data-view="installed" aria-controls="plugin-results" aria-selected=${view === 'installed'} tabIndex=${view === 'installed' ? 0 : -1} onClick=${() => setView('installed')}>已安装 <span>${state.installed.length}</span></button>
+      </div>
       <input type="search" aria-label="搜索插件" placeholder="搜索插件名称、ID 或仓库…" value=${filter} onInput=${e => setFilter(e.target.value)}/>
       ${!Object.keys(state.sources).length && html`<p>此镜像未启用插件来源。构建时勾选需要的仓库；游戏更新功能仍可使用。</p>`}
-      <div class="plugin-list">${visible.map(p => {
+      <div class="plugin-list" id="plugin-results" role="tabpanel" aria-labelledby=${view === 'all' ? 'plugins-all-tab' : 'plugins-installed-tab'} tabIndex="0">
+        ${visible.length === 0 && html`<p class="plugin-empty">${filter ? '没有符合搜索条件的插件。' : view === 'installed' ? '还没有安装插件。' : '当前没有可显示的插件。'}</p>`}
+        ${visible.map(p => {
         const key = `${p.source}/${p.id}`, have = installed.get(key);
-        return html`<article key=${key} class=${selected.has(key) ? 'is-selected' : ''}><label><input type="checkbox" checked=${selected.has(key)} disabled=${busy} onChange=${e => toggle(key, e.target.checked)}/><span><strong>${state.sources[p.source]?.repository.split('/')[1] || p.source} + ${label(p)}</strong><small>${key} · 目录版本 ${p.version}${have ? ` · 已下载 ${have.version}` : ''}</small></span></label>
+        return html`<article key=${key} class=${selected.has(key) ? 'is-selected' : ''}><label><input type="checkbox" checked=${selected.has(key)} disabled=${busy} onChange=${e => toggle(key, e.target.checked)}/><span><strong>${state.sources[p.source]?.repository.split('/')[1] || p.source} + ${label(p)}</strong><small>${key} · 插件包版本 ${p.version}${have ? ` · 已下载 ${have.version}` : ''}</small></span></label>
           <span class=${have?.status === 'bundled-only' || have?.status === 'partial' ? 'badge warn' : have ? 'badge installed' : 'badge'}>${have ? names[have.status] || have.status : '未安装'}</span>
           ${have && (have.version !== p.version || have.revision !== state.sources[p.source]?.revision) && html`<small>来源有更新，可重新下载</small>`}
-          ${p.adapter === 'lele' && html`<small class="muted">安装时自动准备同版本 Lele 宿主补丁，重启后生效。补丁修改独立运行副本，游戏更新须通过兼容检查。</small>`}
+          ${p.adapter === 'lele' && html`<small class="muted">Lele 插件需要单独适配的宿主补丁；插件包版本不表示支持同版本游戏。补丁修改独立运行副本，游戏更新须通过兼容检查。</small>`}
           ${have?.diagnostics?.length > 0 && html`<details><summary>安装诊断</summary><pre>${JSON.stringify(have.diagnostics, null, 2)}</pre></details>`}
         </article>`;
       })}</div>

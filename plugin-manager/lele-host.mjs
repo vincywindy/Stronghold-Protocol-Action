@@ -117,7 +117,8 @@ export async function prepareRuntime(game, plugins, { log = () => {}, apply = ap
   if (manifest.revision !== plugins.host.revision || manifest.patchSha256 !== plugins.host.patchSha256 ||
       manifest.repository !== LELE_REPOSITORY || manifest.api !== 1) throw new Error('Lele host bundle metadata mismatch');
   const version = readJson(path.join(game.dir, 'package.json')).version;
-  if (version !== manifest.version) throw new Error(`Lele 宿主补丁仅适配 ${manifest.version}，当前游戏为 ${version}；请更新插件补丁或卸载全部 Lele 插件后再更新游戏`);
+  // Plugin package versions are independent of the exact game baseline required by the host patch.
+  if (version !== manifest.version) throw new Error(`Lele 宿主补丁仅适配 ${manifest.version}，当前游戏为 ${version}；请等待来源发布对应版本的宿主补丁，或移除全部 Lele 插件并重启`);
   for (const [rel, digest] of Object.entries(manifest.files)) {
     safePath(rel);
     const file = path.join(bundle, rel);
