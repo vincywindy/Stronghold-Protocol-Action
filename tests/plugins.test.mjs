@@ -3,7 +3,7 @@ import test from 'node:test';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { readCatalog, validateCatalog, selectPlugins, selectBuildSources, forgeImportStatus, copyTree } from '../scripts/plugin-catalog.mjs';
+import { readCatalog, validateCatalog, selectPlugins, selectBuildSources, forgeImportStatus, copyTree, pluginKeyPattern } from '../scripts/plugin-catalog.mjs';
 import { spawnSync } from 'node:child_process';
 import { generatedFiles } from '../scripts/generate-plugin-workflows.mjs';
 import { refreshCatalog } from '../scripts/refresh-plugin-catalog.mjs';
@@ -30,6 +30,17 @@ test('catalog requires retrievable source identities and confined paths', () => 
   }
 });
 
+test('mixed-case upstream plugin IDs remain selectable with their exact spelling', () => {
+  const catalog = readCatalog();
+  catalog.plugins.push({ ...catalog.plugins[0], id: 'dongShip', path: 'mods/dongShip/1.2.29/mod.zip' });
+  validateCatalog(catalog);
+  assert.equal(selectPlugins('forge/dongShip', catalog)[0].id, 'dongShip');
+  assert.equal(pluginKeyPattern.test('forge/dongShip'), true);
+  assert.equal(pluginKeyPattern.test('FORGE/dongShip'), false);
+  assert.equal(pluginKeyPattern.test('forge/../dongShip'), false);
+  assert.throws(() => selectPlugins('forge/dongship', catalog), /Unknown plugin/);
+});
+
 test('unsupported and partial imports are recorded without excluding their original packages', () => {
   const report = { ok: true, wrote: true, products: [{ id: 'demo' }], skipped: [] };
   assert.equal(forgeImportStatus(report), 'imported');
@@ -44,12 +55,12 @@ test('discovery retains all published entries without a compatibility filter and
   const catalog = readCatalog();
   const request = async url => {
     if (url.includes('/commits/')) return { sha: 'b'.repeat(40) };
-    if (url.endsWith('/mods/index.json')) return { mods: [{ id: 'future-plugin', name: 'Future', version: '9.0.0', path: 'mods/future-plugin/mod.zip', sha256: 'a'.repeat(64) }] };
-    if (url.includes('/git/trees/')) return { tree: [{ path: 'plugins/lele-future/plugin.json' }] };
-    return { id: 'lele-future', name: 'Future Lele', version: '9.0.0', license: 'MIT' };
+    if (url.endsWith('/mods/index.json')) return { mods: [{ id: 'dongShip', name: 'Future', version: '9.0.0', path: 'mods/dongShip/mod.zip', sha256: 'a'.repeat(64) }] };
+    if (url.includes('/git/trees/')) return { tree: [{ path: 'plugins/leleFuture/plugin.json' }] };
+    return { id: 'leleFuture', name: 'Future Lele', version: '9.0.0', license: 'MIT' };
   };
   const updated = await refreshCatalog(catalog, request);
-  assert.deepEqual(updated.plugins.map(p => p.id), ['future-plugin', 'lele-future']);
+  assert.deepEqual(updated.plugins.map(p => p.id), ['dongShip', 'leleFuture']);
   assert.equal(catalog.sources.forge.revision, readCatalog().sources.forge.revision);
   await assert.rejects(refreshCatalog(catalog, async () => { throw new Error('network failure'); }), /network failure/);
 });

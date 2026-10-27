@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn } from 'node:child_process';
-import { readCatalog, validateCatalog } from '../scripts/plugin-catalog.mjs';
+import { readCatalog, validateCatalog, pluginKeyPattern } from '../scripts/plugin-catalog.mjs';
 import { refreshCatalog } from '../scripts/refresh-plugin-catalog.mjs';
 import { requestJson } from './download.mjs';
 import { initStore, current, readJson, writeJson } from './storage.mjs';
@@ -46,7 +46,7 @@ if (enabled === '0' || enabled === 'auto' && !Object.keys(bakedCatalog.sources).
     start(action, body) {
       if (closing || job?.status === 'running') throw Object.assign(new Error('另一个管理任务正在运行'), { status: 409 });
       if (!['refresh', 'apply', 'restart', 'check-update', 'update-game', 'rollback-game'].includes(action)) throw new Error('Unknown action');
-      if (action === 'apply' && (!Array.isArray(body.keys) || body.keys.some(key => typeof key !== 'string' || !/^[a-z0-9-]+\/[a-z0-9-]+$/.test(key)))) throw new Error('Invalid plugin selection');
+      if (action === 'apply' && (!Array.isArray(body.keys) || body.keys.some(key => typeof key !== 'string' || !pluginKeyPattern.test(key)))) throw new Error('Invalid plugin selection');
       job = { action, status: 'running', startedAt: new Date().toISOString() };
       void (async () => {
         try {

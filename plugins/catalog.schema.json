@@ -28,7 +28,7 @@
         "additionalProperties": false,
         "properties": {
           "source": { "type": "string", "pattern": "^[a-z][a-z0-9-]*$" },
-          "id": { "type": "string", "pattern": "^[a-z0-9][a-z0-9-]{1,31}$" },
+          "id": { "type": "string", "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{1,31}$" },
           "name": { "type": "string", "minLength": 1 },
           "version": { "type": "string", "minLength": 1 },
           "license": { "type": "string", "minLength": 1 },

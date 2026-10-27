@@ -4,6 +4,9 @@ import { fileURLToPath } from 'node:url';
 
 export const catalogPath = fileURLToPath(new URL('../plugins/catalog.json', import.meta.url));
 export const shaPattern = /^[a-f0-9]{40}$/;
+// Forge publishes case-sensitive IDs such as dongShip; selection keys must preserve their exact spelling.
+export const pluginIdPattern = /^[A-Za-z0-9][A-Za-z0-9-]{1,31}$/;
+export const pluginKeyPattern = /^[a-z][a-z0-9-]*\/[A-Za-z0-9][A-Za-z0-9-]{1,31}$/;
 export function safePath(value) {
   if (typeof value !== 'string' || !value || value.includes('\\') || value.startsWith('/') || value.split('/').some(p => !p || p === '.' || p === '..' || p.startsWith('.')) || value.includes(':')) throw new Error(`Unsafe relative path: ${value}`);
   return value;
@@ -17,7 +20,7 @@ export function validateCatalog(catalog) {
   }
   for (const plugin of catalog.plugins) {
     const source = catalog.sources[plugin.source];
-    if (!source || !/^[a-z0-9][a-z0-9-]{1,31}$/.test(plugin.id) || ids.has(`${plugin.source}/${plugin.id}`)) throw new Error(`Invalid/duplicate plugin: ${plugin.id}`);
+    if (!source || !pluginIdPattern.test(plugin.id) || ids.has(`${plugin.source}/${plugin.id}`)) throw new Error(`Invalid/duplicate plugin: ${plugin.id}`);
     ids.add(`${plugin.source}/${plugin.id}`);
     if (![plugin.name, plugin.version, plugin.license].every(v => typeof v === 'string' && v.length > 0 && !/[\r\n]/.test(v))
       || !['forge', 'lele', 'native'].includes(plugin.adapter)) throw new Error(`Incomplete plugin: ${plugin.id}`);

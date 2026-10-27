@@ -28,7 +28,7 @@ export async function refreshCatalog(catalog = readCatalog(), request = json) {
       const tree = await request(`https://api.github.com/repos/${source.repository}/git/trees/${commit.sha}?recursive=1`);
       if (tree.truncated || !Array.isArray(tree.tree)) throw new Error(`Incomplete repository tree: ${id}`);
       plugins = [];
-      for (const entry of tree.tree.filter(p => /^plugins\/[a-z0-9][a-z0-9-]+\/plugin\.json$/.test(p.path))) {
+      for (const entry of tree.tree.filter(p => /^plugins\/[A-Za-z0-9][A-Za-z0-9-]{1,31}\/plugin\.json$/.test(p.path))) {
         const manifest = await request(`${raw}/${entry.path}`);
         const pluginId = entry.path.split('/')[1];
         if (manifest.id !== pluginId) throw new Error(`Manifest ID differs from folder: ${entry.path}`);
